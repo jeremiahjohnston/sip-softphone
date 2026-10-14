@@ -7,6 +7,25 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- Icons, referenced with <use href="#i-..."> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></symbol>
+    <symbol id="i-end" viewBox="0 0 24 24"><path d="M12 9c-1.6 0-3.2.3-4.6.7v3.1c0 .4-.2.7-.6.9-1 .5-1.9 1.1-2.7 1.8a1 1 0 0 1-1.4 0L.3 13.1a1 1 0 0 1 0-1.4A16.9 16.9 0 0 1 12 7c4.6 0 8.7 1.8 11.7 4.7.4.4.4 1 0 1.4l-2.4 2.4a1 1 0 0 1-1.4 0c-.8-.7-1.7-1.3-2.7-1.8a1 1 0 0 1-.6-.9V9.7C15.2 9.3 13.6 9 12 9z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></symbol>
+    <symbol id="i-micoff" viewBox="0 0 24 24"><path d="M19 11h-2c0 .7-.2 1.4-.4 2l1.5 1.5c.6-1 .9-2.2.9-3.5zm-4 .2V5a3 3 0 0 0-6-.2zM4.3 3 3 4.3l6 6V11a3 3 0 0 0 4.2 2.8l1.6 1.6A5 5 0 0 1 7 11H5a7 7 0 0 0 6 6.9V21h2v-3.1c1-.1 2-.5 2.8-1L19.7 21l1.3-1.3z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><path d="M5 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm7 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></symbol>
+    <symbol id="i-xfer" viewBox="0 0 24 24"><path d="M16 3l5 5-5 5V9.5H9v-3h7zm-8 8v3.5h7v3H8V21l-5-5z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7z"/></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M19.4 13c.1-.3.1-.7.1-1s0-.7-.1-1l2.1-1.6c.2-.2.2-.4.1-.6l-2-3.5c-.1-.2-.4-.3-.6-.2l-2.5 1a7 7 0 0 0-1.7-1l-.4-2.6c0-.3-.2-.4-.5-.4h-4c-.2 0-.4.2-.5.4l-.4 2.6a7 7 0 0 0-1.7 1l-2.5-1c-.2-.1-.5 0-.6.2l-2 3.5c-.1.2-.1.5.1.6L4.6 11 4.5 12l.1 1-2.1 1.6c-.2.2-.2.4-.1.6l2 3.5c.1.2.4.3.6.2l2.5-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .3.2.4.5.4h4c.2 0 .4-.2.5-.4l.4-2.6a7 7 0 0 0 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.5c.1-.2.1-.5-.1-.6zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M22 3H7c-.7 0-1.2.3-1.6.9L0 12l5.4 8.1c.4.5.9.9 1.6.9h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.6L17.6 17 14 13.4 10.4 17 9 15.6l3.6-3.6L9 8.4 10.4 7l3.6 3.6L17.6 7 19 8.4 15.4 12z"/></symbol>
+    <symbol id="i-in" viewBox="0 0 24 24"><path d="M20 5.4 18.6 4 7 15.6V9H5v10h10v-2H8.4z"/></symbol>
+    <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 5v2h6.6L4 18.6 5.4 20 17 8.4V15h2V5z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></symbol>
+  </svg>
+
   <header>
     <div class="who">
       <span id="reg-dot" class="dot"></span>
@@ -15,41 +34,84 @@
         <div id="reg-text" class="sub">Not registered</div>
       </div>
     </div>
-    <button id="btn-settings" class="icon" title="Account">⚙</button>
+    <button id="btn-settings" class="icon" title="Settings"><svg><use href="#i-gear"/></svg></button>
   </header>
 
   <main>
-    <!-- Dialer -->
+    <!-- Keypad -->
     <section id="view-dial" class="view">
-      <input id="dial" class="dial" placeholder="Enter number or extension" autocomplete="off" />
+      <div class="dial-row">
+        <input id="dial" class="dial" placeholder="Number or extension" autocomplete="off" list="contact-list" />
+        <button id="btn-back" class="icon" title="Delete"><svg><use href="#i-back"/></svg></button>
+      </div>
       <div class="pad" id="pad"></div>
-      <button id="btn-call" class="round green" title="Call">📞</button>
+      <button id="btn-call" class="round green" title="Call"><svg><use href="#i-phone"/></svg></button>
     </section>
 
-    <!-- Active / outgoing / incoming call -->
+    <!-- Recents -->
+    <section id="view-recents" class="view list-view">
+      <div class="list-head">
+        <h2>Recents</h2>
+        <button id="btn-clear-recents" class="link">Clear</button>
+      </div>
+      <ul id="recents" class="list"></ul>
+      <p id="recents-empty" class="empty">No calls yet.</p>
+    </section>
+
+    <!-- Contacts -->
+    <section id="view-contacts" class="view list-view">
+      <div class="list-head">
+        <h2>Contacts</h2>
+        <button id="btn-add-contact" class="icon" title="Add contact"><svg><use href="#i-plus"/></svg></button>
+      </div>
+      <form id="contact-form" class="contact-form hidden">
+        <input name="name" placeholder="Name" required />
+        <input name="number" placeholder="Number or extension" required />
+        <div class="row-end">
+          <button type="button" id="btn-cancel-contact" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </div>
+      </form>
+      <input id="contact-search" class="search" placeholder="Search" />
+      <ul id="contacts" class="list"></ul>
+      <p id="contacts-empty" class="empty">No contacts yet. Add one with +.</p>
+    </section>
+
+    <!-- Calls -->
     <section id="view-call" class="view hidden">
+      <div id="other-calls" class="other-calls"></div>
       <div class="callee">
+        <div class="avatar" id="call-avatar"></div>
         <div id="call-remote" class="remote"></div>
-        <div id="call-state" class="sub"></div>
+        <div id="call-number" class="sub"></div>
+        <div id="call-state" class="state"></div>
         <div id="call-timer" class="timer"></div>
       </div>
       <div id="incoming-actions" class="row hidden">
-        <button id="btn-decline" class="round red" title="Decline">✕</button>
-        <button id="btn-answer" class="round green" title="Answer">📞</button>
+        <button id="btn-decline" class="round red" title="Decline"><svg><use href="#i-end"/></svg></button>
+        <button id="btn-answer" class="round green pulse" title="Answer"><svg><use href="#i-phone"/></svg></button>
       </div>
       <div id="call-actions" class="hidden">
-        <div class="grid3">
-          <button id="btn-mute" class="toggle">🎙<span>Mute</span></button>
-          <button id="btn-hold" class="toggle">⏸<span>Hold</span></button>
-          <button id="btn-keypad" class="toggle">⌗<span>Keypad</span></button>
+        <div class="grid4">
+          <button id="btn-mute" class="toggle"><svg><use href="#i-mic"/></svg><span>Mute</span></button>
+          <button id="btn-hold" class="toggle"><svg><use href="#i-pause"/></svg><span>Hold</span></button>
+          <button id="btn-keypad" class="toggle"><svg><use href="#i-grid"/></svg><span>Keypad</span></button>
+          <button id="btn-xfer" class="toggle"><svg><use href="#i-xfer"/></svg><span>Transfer</span></button>
         </div>
-        <div class="pad hidden" id="dtmf-pad"></div>
-        <button id="btn-hangup" class="round red" title="Hang up">✕</button>
+        <div class="pad small hidden" id="dtmf-pad"></div>
+        <form id="xfer-panel" class="xfer hidden">
+          <input id="xfer-dest" placeholder="Transfer to…" autocomplete="off" list="contact-list" required />
+          <div class="row-end">
+            <button type="button" id="btn-xfer-consult" class="ghost" title="Put this call on hold and talk to them first">Ask first</button>
+            <button type="submit" class="primary">Transfer now</button>
+          </div>
+        </form>
+        <button id="btn-hangup" class="round red" title="Hang up"><svg><use href="#i-end"/></svg></button>
       </div>
     </section>
 
-    <!-- Account settings -->
-    <section id="view-settings" class="view hidden">
+    <!-- Settings -->
+    <section id="view-settings" class="view list-view hidden">
       <h2>Account</h2>
       <form id="acct-form">
         <label>Server (FreePBX host or IP)<input name="server" required placeholder="pbx.example.lan" /></label>
@@ -68,7 +130,7 @@
         <label>Auth ID (optional)<input name="auth_user" placeholder="same as extension" /></label>
         <label>Display name (optional)<input name="display_name" /></label>
         <p class="hint">Settings except the password are saved on this computer. You'll re-enter the password each launch for now.</p>
-        <div class="row">
+        <div class="row-end">
           <button type="button" id="btn-unregister" class="ghost">Sign out</button>
           <button type="submit" class="primary">Register</button>
         </div>
@@ -77,6 +139,7 @@
       <div class="audio">
         <label>Microphone<select id="mic"></select></label>
         <label>Speaker<select id="speaker"></select></label>
+        <label class="check"><input type="checkbox" id="ring-on" checked /> Play a ringtone for incoming calls</label>
         <p class="hint">Changes apply right away, even during a call. Plugged in a headset? Reopen this screen to see it.</p>
       </div>
       <details>
@@ -86,6 +149,13 @@
     </section>
   </main>
 
+  <nav id="tabs">
+    <button data-tab="dial" class="on"><svg><use href="#i-grid"/></svg><span>Keypad</span></button>
+    <button data-tab="recents"><svg><use href="#i-clock"/></svg><span>Recents</span><i id="missed-badge" class="badge hidden"></i></button>
+    <button data-tab="contacts"><svg><use href="#i-person"/></svg><span>Contacts</span></button>
+  </nav>
+
+  <datalist id="contact-list"></datalist>
   <div id="toast" class="toast hidden"></div>
   <script src="app.js"></script>
 </body>

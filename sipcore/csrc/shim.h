@@ -14,7 +14,8 @@ enum sp_event_type {
     SP_EV_INCOMING = 2,   /* call_id, remote = caller URI */
     SP_EV_CALL_STATE = 3, /* call_id, code = SIP status, text = state name */
     SP_EV_MEDIA = 4,      /* call_id, code = 1 when audio is flowing */
-    SP_EV_LOG = 5         /* text = log line */
+    SP_EV_LOG = 5,        /* text = log line */
+    SP_EV_TRANSFER = 6    /* call_id, code = SIP status of the transfer, text = reason, remote = "final" when done */
 };
 
 typedef struct sp_event {
@@ -42,6 +43,10 @@ void sp_hangup_all(void);
 int  sp_send_dtmf(int call_id, const char *digits);
 int  sp_set_mute(int call_id, int mute);
 int  sp_set_hold(int call_id, int hold);
+/* Blind transfer to dest (same forms as sp_make_call). */
+int  sp_transfer(int call_id, const char *dest);
+/* Attended transfer: connect call_id's party to the party on dest_call_id. */
+int  sp_transfer_attended(int call_id, int dest_call_id);
 /* Audio devices. Re-scans hardware first when no call is active.
  * Returns the number of devices. */
 int  sp_audio_dev_count(void);
@@ -50,6 +55,9 @@ int  sp_audio_dev_info(int idx, char *name, int name_len, char *driver,
                        int driver_len, int *inputs, int *outputs);
 /* -1 for either means the system default. */
 int  sp_set_audio_devs(int capture, int playback);
+/* Ringer through the selected speaker. mode: 0 off, 1 ring (loops),
+ * 2 call-waiting beep (plays once). */
+int  sp_ring(int mode);
 /* Use no sound device (for headless tests). */
 int  sp_use_null_audio(void);
 void sp_shutdown(void);

@@ -37,6 +37,8 @@ extern "C" {
     fn sp_send_dtmf(call_id: c_int, digits: *const c_char) -> c_int;
     fn sp_set_mute(call_id: c_int, mute: c_int) -> c_int;
     fn sp_set_hold(call_id: c_int, hold: c_int) -> c_int;
+    fn sp_transfer(call_id: c_int, dest: *const c_char) -> c_int;
+    fn sp_transfer_attended(call_id: c_int, dest_call_id: c_int) -> c_int;
     fn sp_audio_dev_count() -> c_int;
     fn sp_audio_dev_info(
         idx: c_int,
@@ -48,6 +50,7 @@ extern "C" {
         outputs: *mut c_int,
     ) -> c_int;
     fn sp_set_audio_devs(capture: c_int, playback: c_int) -> c_int;
+    fn sp_ring(mode: c_int) -> c_int;
     fn sp_use_null_audio() -> c_int;
     fn sp_shutdown();
 }
@@ -62,6 +65,8 @@ pub enum SipEvent {
     CallState { call_id: i32, state: String, code: i32, remote: String },
     Media { call_id: i32, active: bool, status: String },
     Log { level: i32, line: String },
+    /// Progress of a transfer we started on `call_id`.
+    Transfer { call_id: i32, code: i32, reason: String, done: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -144,6 +149,12 @@ extern "C" fn trampoline(ev: *const RawEvent, _user: *mut c_void) {
         },
         4 => SipEvent::Media { call_id: ev.call_id, active: ev.code == 1, status: cstr(ev.text) },
         5 => SipEvent::Log { level: ev.code, line: cstr(ev.text) },
+        6 => SipEvent::Transfer {
+            call_id: ev.call_id,
+            code: ev.code,
+            reason: cstr(ev.text),
+            done: cstr(ev.remote) == "final",
+        },
         _ => return,
     };
     // Never let a panic unwind into C.
@@ -236,6 +247,18 @@ pub fn set_hold(call_id: i32, hold: bool) -> Result<(), Error> {
     check(unsafe { sp_set_hold(call_id, hold as c_int) }, "hold")
 }
 
+/// Blind transfer: sends the other party on `call_id` to `dest`.
+pub fn transfer(call_id: i32, dest: &str) -> Result<(), Error> {
+    let d = c(dest.trim());
+    check(unsafe { sp_transfer(call_id, d.as_ptr()) }, "transfer")
+}
+
+/// Attended transfer: connects the party on `call_id` to the party on
+/// `dest_call_id` (usually a consult call you placed while `call_id` was held).
+pub fn transfer_attended(call_id: i32, dest_call_id: i32) -> Result<(), Error> {
+    check(unsafe { sp_transfer_attended(call_id, dest_call_id) }, "transfer")
+}
+
 /// Lists sound devices. Plugged-in devices show up when no call is active.
 pub fn audio_devices() -> Vec<AudioDevice> {
     let count = unsafe { sp_audio_dev_count() };
@@ -273,6 +296,26 @@ pub fn set_audio_devices(capture: Option<i32>, playback: Option<i32>) -> Result<
         unsafe { sp_set_audio_devs(capture.unwrap_or(-1), playback.unwrap_or(-1)) },
         "audio device",
     )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Ring {
+    Off,
+    /// Looping ringtone for an incoming call.
+    Ring,
+    /// A short double beep for a second call arriving mid-call.
+    Waiting,
+}
+
+/// Plays or stops the ringer on the selected speaker.
+pub fn ring(mode: Ring) -> Result<(), Error> {
+    let m = match mode {
+        Ring::Off => 0,
+        Ring::Ring => 1,
+        Ring::Waiting => 2,
+    };
+    check(unsafe { sp_ring(m) }, "ring")
 }
 
 /// Runs without a sound device. Meant for headless tests.

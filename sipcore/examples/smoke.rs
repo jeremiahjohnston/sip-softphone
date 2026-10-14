@@ -3,6 +3,7 @@
 //!   SIP_SERVER=pbx.local SIP_USER=1001 SIP_PASS=... [SIP_TRANSPORT=udp] \
 //!   [SIP_DIAL=1002] cargo run --example smoke
 //!
+//! SIP_XFER=<dest> transfers the call there (SIP_ATTENDED=1 consults first).
 //! SIP_WAIT=<secs> stays up for incoming calls, SIP_ANSWER=1 answers them.
 //! SIP_NULL_AUDIO=1 runs without a sound device, SIP_LOG=1 prints pjsip logs.
 //! With no SIP_SERVER it just starts and stops the stack.
@@ -28,6 +29,13 @@ fn main() {
     )
     .expect("start");
     println!("SIP stack started");
+    if env::var_os("SIP_RING").is_some() {
+        println!("ring: {:?}", sipcore::ring(sipcore::Ring::Ring));
+        thread::sleep(Duration::from_secs(3));
+        println!("waiting: {:?}", sipcore::ring(sipcore::Ring::Waiting));
+        thread::sleep(Duration::from_secs(1));
+        println!("off: {:?}", sipcore::ring(sipcore::Ring::Off));
+    }
     for dev in sipcore::audio_devices() {
         println!("audio device {dev:?}");
     }
@@ -57,6 +65,21 @@ fn main() {
             let id = sipcore::call(&dest).expect("call");
             println!("dialing {dest} as call {id}");
             thread::sleep(Duration::from_secs(6));
+            if let Ok(xfer) = env::var("SIP_XFER") {
+                if env::var_os("SIP_ATTENDED").is_some() {
+                    println!("hold A: {:?}", sipcore::set_hold(id, true));
+                    let b = sipcore::call(&xfer).expect("consult call");
+                    thread::sleep(Duration::from_secs(4));
+                    println!("attended transfer: {:?}", sipcore::transfer_attended(id, b));
+                } else {
+                    println!("blind transfer: {:?}", sipcore::transfer(id, &xfer));
+                }
+                thread::sleep(Duration::from_secs(6));
+                sipcore::hangup_all();
+                thread::sleep(Duration::from_secs(1));
+                sipcore::shutdown();
+                return;
+            }
             println!("dtmf: {:?}", sipcore::send_dtmf(id, "123"));
             println!("mute: {:?}", sipcore::set_mute(id, true));
             println!("hold: {:?}", sipcore::set_hold(id, true));

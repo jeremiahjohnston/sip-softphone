@@ -21,6 +21,10 @@ static int g_port;
 static char g_transport[8];
 static pj_bool_t g_muted[PJSUA_MAX_CALLS];
 static pj_bool_t g_started;
+static unsigned g_clock_rate;
+static pj_pool_t *g_pool;
+static pjmedia_port *g_ring_port;
+static pjsua_conf_port_id g_ring_slot = PJSUA_INVALID_ID;
 
 static void emit(int type, int call_id, int code, const char *text, const char *remote)
 {
@@ -138,6 +142,21 @@ static void on_call_media_state(pjsua_call_id call_id)
          NULL);
 }
 
+static void on_call_transfer_status(pjsua_call_id call_id, int st_code,
+                                    const pj_str_t *st_text, pj_bool_t final,
+                                    pj_bool_t *p_cont)
+{
+    char text[128];
+    snprintf(text, sizeof(text), "%.*s", (int)st_text->slen, st_text->ptr);
+    emit(SP_EV_TRANSFER, call_id, st_code, text, final ? "final" : "");
+    if (final) {
+        *p_cont = PJ_FALSE;
+        /* The other side has been connected elsewhere; drop our leg. */
+        if (st_code / 100 == 2)
+            pjsua_call_hangup(call_id, 0, NULL, NULL);
+    }
+}
+
 int sp_init(sp_event_cb cb, void *user, int log_level)
 {
     pjsua_config cfg;
@@ -160,6 +179,7 @@ int sp_init(sp_event_cb cb, void *user, int log_level)
     cfg.cb.on_incoming_call = &on_incoming_call;
     cfg.cb.on_call_state = &on_call_state;
     cfg.cb.on_call_media_state = &on_call_media_state;
+    cfg.cb.on_call_transfer_status = &on_call_transfer_status;
     cfg.user_agent = pj_str("SIP Softphone");
 
     pjsua_logging_config_default(&log_cfg);
@@ -169,6 +189,7 @@ int sp_init(sp_event_cb cb, void *user, int log_level)
 
     pjsua_media_config_default(&media_cfg);
     media_cfg.ec_tail_len = 200;
+    g_clock_rate = media_cfg.clock_rate;
 
     status = pjsua_init(&cfg, &log_cfg, &media_cfg);
     if (status != PJ_SUCCESS)
@@ -194,6 +215,12 @@ int sp_init(sp_event_cb cb, void *user, int log_level)
      * every call. */
     if (pjmedia_aud_dev_count() == 0)
         pjsua_set_null_snd_dev();
+
+    /* Tone generator for the ringer, mixed into the speaker on demand. */
+    g_pool = pjsua_pool_create("ring", 1000, 1000);
+    if (pjmedia_tonegen_create(g_pool, g_clock_rate, 1, g_clock_rate * 20 / 1000,
+                               16, 0, &g_ring_port) == PJ_SUCCESS)
+        pjsua_conf_add_port(g_pool, g_ring_port, &g_ring_slot);
 
     g_started = PJ_TRUE;
     return 0;
@@ -272,6 +299,23 @@ int sp_remove_account(void)
     return status;
 }
 
+/* Turns "1002" into "sip:1002@server[:port][;transport=x]"; full URIs pass through. */
+static void build_uri(const char *dest, char *uri, size_t len)
+{
+    if (strncmp(dest, "sip:", 4) == 0 || strncmp(dest, "sips:", 5) == 0) {
+        snprintf(uri, len, "%s", dest);
+    } else {
+        char port[16] = "";
+        if (g_port > 0)
+            snprintf(port, sizeof(port), ":%d", g_port);
+        if (strcmp(g_transport, "udp") == 0)
+            snprintf(uri, len, "sip:%s@%s%s", dest, g_server, port);
+        else
+            snprintf(uri, len, "sip:%s@%s%s;transport=%s",
+                     dest, g_server, port, g_transport);
+    }
+}
+
 int sp_make_call(const char *dest)
 {
     char uri[512];
@@ -283,19 +327,7 @@ int sp_make_call(const char *dest)
         return -1;
     ensure_thread();
 
-    if (strncmp(dest, "sip:", 4) == 0 || strncmp(dest, "sips:", 5) == 0) {
-        snprintf(uri, sizeof(uri), "%s", dest);
-    } else {
-        char port[16] = "";
-        if (g_port > 0)
-            snprintf(port, sizeof(port), ":%d", g_port);
-        if (strcmp(g_transport, "udp") == 0)
-            snprintf(uri, sizeof(uri), "sip:%s@%s%s", dest, g_server, port);
-        else
-            snprintf(uri, sizeof(uri), "sip:%s@%s%s;transport=%s",
-                     dest, g_server, port, g_transport);
-    }
-
+    build_uri(dest, uri, sizeof(uri));
     target = pj_str(uri);
     status = pjsua_call_make_call(g_acc, &target, NULL, NULL, NULL, &call_id);
     if (status != PJ_SUCCESS)
@@ -406,12 +438,58 @@ int sp_set_audio_devs(int capture, int playback)
     return pjsua_set_snd_dev(capture, playback);
 }
 
+int sp_ring(int mode)
+{
+    pjmedia_tone_desc t[3];
+    if (!g_started || g_ring_slot == PJSUA_INVALID_ID)
+        return PJ_EINVALIDOP;
+    ensure_thread();
+    pjmedia_tonegen_stop(g_ring_port);
+    pjsua_conf_disconnect(g_ring_slot, 0);
+    if (mode == 0)
+        return 0;
+
+    pj_bzero(t, sizeof(t));
+    if (mode == 1) {
+        /* Two short chirps, then a pause. */
+        t[0].freq1 = 1046; t[0].freq2 = 1318; t[0].on_msec = 350; t[0].off_msec = 150;
+        t[1].freq1 = 1046; t[1].freq2 = 1318; t[1].on_msec = 350; t[1].off_msec = 2200;
+        pjmedia_tonegen_play(g_ring_port, 2, t, PJMEDIA_TONEGEN_LOOP);
+    } else {
+        t[0].freq1 = 440; t[0].on_msec = 180; t[0].off_msec = 120;
+        t[1].freq1 = 440; t[1].on_msec = 180; t[1].off_msec = 100;
+        pjmedia_tonegen_play(g_ring_port, 2, t, 0);
+    }
+    return pjsua_conf_connect(g_ring_slot, 0);
+}
+
 int sp_use_null_audio(void)
 {
     if (!g_started)
         return PJ_EINVALIDOP;
     ensure_thread();
     return pjsua_set_null_snd_dev();
+}
+
+int sp_transfer(int call_id, const char *dest)
+{
+    char uri[512];
+    pj_str_t target;
+    if (!valid_call(call_id) || !dest || !*dest)
+        return PJ_EINVAL;
+    ensure_thread();
+    build_uri(dest, uri, sizeof(uri));
+    target = pj_str(uri);
+    return pjsua_call_xfer(call_id, &target, NULL);
+}
+
+int sp_transfer_attended(int call_id, int dest_call_id)
+{
+    if (!valid_call(call_id) || !valid_call(dest_call_id))
+        return PJ_EINVAL;
+    ensure_thread();
+    return pjsua_call_xfer_replaces(call_id, dest_call_id,
+                                    PJSUA_XFER_NO_REQUIRE_REPLACES, NULL);
 }
 
 void sp_shutdown(void)
@@ -421,6 +499,18 @@ void sp_shutdown(void)
     ensure_thread();
     g_started = PJ_FALSE;
     g_acc = PJSUA_INVALID_ID;
+    if (g_ring_slot != PJSUA_INVALID_ID) {
+        pjsua_conf_remove_port(g_ring_slot);
+        g_ring_slot = PJSUA_INVALID_ID;
+    }
+    if (g_ring_port) {
+        pjmedia_port_destroy(g_ring_port);
+        g_ring_port = NULL;
+    }
+    if (g_pool) {
+        pj_pool_release(g_pool);
+        g_pool = NULL;
+    }
     pjsua_destroy();
     g_cb = NULL;
 }

@@ -8,7 +8,13 @@ Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 
 ## Status
 
-Step 1: register one account, make and receive calls, mute, hold, DTMF keypad.
+- Registers one account; makes and receives calls
+- Mute, hold, DTMF keypad
+- Blind transfer ("Transfer now") and attended transfer ("Ask first", then Connect)
+- Call waiting: answer a second call, swap between them
+- Recents (call history with missed-call badge) and contacts
+- Ringtone on the selected speaker; the window comes forward on incoming calls
+- Microphone and speaker selection
 
 ## Layout
 
@@ -19,7 +25,18 @@ Step 1: register one account, make and receive calls, mute, hold, DTMF keypad.
 | `ui/` | Plain HTML/CSS/JS front end (no build step). Opening `ui/index.html` in a browser shows a mock preview. |
 | `scripts/` | Build PJSIP and run the app on each OS. |
 
-## Windows
+## Downloads
+
+Every push to `main` builds a Windows installer and a macOS disk image on
+GitHub Actions. Open the latest run on the Actions tab and download from
+**Artifacts**.
+
+On macOS the app is not notarized yet. If macOS says it's damaged, drag it to
+Applications and run `xattr -cr "/Applications/SIP Softphone.app"` once.
+
+## Building it yourself
+
+### Windows
 
 One-time setup:
 
@@ -35,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-pjsip-windows.ps1   # onc
 powershell -ExecutionPolicy Bypass -File scripts\run-windows.ps1
 ```
 
-## macOS
+### macOS
 
 ```bash
 xcode-select --install                 # once

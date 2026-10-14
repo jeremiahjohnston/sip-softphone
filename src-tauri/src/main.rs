@@ -3,7 +3,7 @@
 
 use serde::Deserialize;
 use sipcore::{Account, SipEvent, Transport};
-use tauri::Emitter;
+use tauri::{Emitter, Manager, UserAttentionType};
 
 #[derive(Deserialize)]
 struct AccountForm {
@@ -75,6 +75,21 @@ fn sip_hold(call_id: i32, hold: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn sip_transfer(call_id: i32, dest: String) -> Result<(), String> {
+    sipcore::transfer(call_id, &dest).map_err(err)
+}
+
+#[tauri::command]
+fn sip_transfer_attended(call_id: i32, dest_call_id: i32) -> Result<(), String> {
+    sipcore::transfer_attended(call_id, dest_call_id).map_err(err)
+}
+
+#[tauri::command]
+fn sip_ring(mode: sipcore::Ring) -> Result<(), String> {
+    sipcore::ring(mode).map_err(err)
+}
+
+#[tauri::command]
 fn audio_devices() -> Vec<sipcore::AudioDevice> {
     sipcore::audio_devices()
 }
@@ -90,6 +105,15 @@ fn main() {
             let handle = app.handle().clone();
             sipcore::start(
                 move |ev: SipEvent| {
+                    if let SipEvent::Incoming { .. } = ev {
+                        // Bring the phone forward so the call can be answered.
+                        if let Some(w) = handle.get_webview_window("main") {
+                            let _ = w.unminimize();
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                            let _ = w.request_user_attention(Some(UserAttentionType::Critical));
+                        }
+                    }
                     let _ = handle.emit("sip", &ev);
                 },
                 4,
@@ -106,6 +130,9 @@ fn main() {
             sip_dtmf,
             sip_mute,
             sip_hold,
+            sip_transfer,
+            sip_transfer_attended,
+            sip_ring,
             audio_devices,
             set_audio_devices
         ])
