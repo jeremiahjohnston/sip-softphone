@@ -27,7 +27,8 @@ Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 
 ## Downloads
 
-Every push to `main` builds a Windows installer and a macOS disk image on
+Every push to `main` builds a Windows installer, a macOS disk image, and a Linux
+.deb and AppImage on
 GitHub Actions. Open the latest run on the Actions tab and download from
 **Artifacts**.
 
@@ -50,6 +51,15 @@ Then, from this folder in PowerShell:
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build-pjsip-windows.ps1   # once
 powershell -ExecutionPolicy Bypass -File scripts\run-windows.ps1
+```
+
+### Linux (Debian/Ubuntu)
+
+```bash
+sudo apt install build-essential git pkg-config libasound2-dev libwebkit2gtk-4.1-dev librsvg2-dev
+curl https://sh.rustup.rs -sSf | sh    # once
+scripts/build-pjsip-linux.sh           # once
+scripts/run-linux.sh
 ```
 
 ### macOS

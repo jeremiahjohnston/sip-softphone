@@ -78,3 +78,33 @@ jobs:
         with:
           name: sip-softphone-macos
           path: target/release/bundle/dmg/*.dmg
+
+  linux:
+    # Oldest supported Ubuntu, so the binaries run on as many distros as possible.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev file
+      - uses: actions/cache@v4
+        with:
+          path: deps
+          key: pjsip-linux-${{ hashFiles('scripts/build-pjsip-linux.sh') }}
+      - name: Build PJSIP
+        run: |
+          [ -f deps/pjsip/lib/pkgconfig/libpjproject.pc ] || ./scripts/build-pjsip-linux.sh
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build app
+        run: |
+          export PJSIP_DIR="$PWD/deps/pjsip"
+          npx --yes @tauri-apps/cli@2 build --bundles deb,appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sip-softphone-linux
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
