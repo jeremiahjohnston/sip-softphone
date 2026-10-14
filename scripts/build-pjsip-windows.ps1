@@ -24,10 +24,17 @@ if (-not (Test-Path $vswhere)) { throw "Visual Studio not found. Install VS 2022
 $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
 if (-not $msbuild) { throw "MSBuild not found. Install VS 2022 Build Tools with the C++ workload." }
 
-# PlatformToolset follows whatever VS is installed; WindowsTargetPlatformVersion uses the newest SDK.
+# Use the C++ toolset that's actually installed (v143 for VS 2022, newer for later VS).
+$vsPath = & $vswhere -latest -products * -property installationPath
+$vcVer = (Get-Content (Join-Path $vsPath "VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt")).Trim()
+$minor = [int]($vcVer.Split(".")[1])
+$toolset = if ($minor -ge 50) { "v145" } elseif ($minor -ge 30) { "v143" } elseif ($minor -ge 20) { "v142" } else { "v141" }
+Write-Host "Using MSVC $vcVer ($toolset)"
+
+# WindowsTargetPlatformVersion=10.0 picks the newest installed Windows SDK.
 & $msbuild (Join-Path $Src "pjproject-vs14.sln") /t:libpjproject /m `
     /p:Configuration=Release-Dynamic /p:Platform=x64 `
-    /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0
+    /p:PlatformToolset=$toolset /p:WindowsTargetPlatformVersion=10.0
 if ($LASTEXITCODE -ne 0) { throw "PJSIP build failed" }
 
 Write-Host ""
