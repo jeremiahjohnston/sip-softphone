@@ -188,3 +188,5 @@ pre {
 }
 input::-webkit-calendar-picker-indicator { display: none !important; }
 .row-end.left { justify-content: flex-start; }
+.ringtone-row { display: flex; gap: 8px; align-items: flex-end; }
+.ringtone-row label { flex: 1; }

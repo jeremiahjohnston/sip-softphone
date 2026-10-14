@@ -140,7 +140,11 @@
         <label>Microphone<select id="mic"></select></label>
         <label>Speaker<select id="speaker"></select></label>
         <label class="check"><input type="checkbox" id="ring-on" checked /> Play a ringtone for incoming calls</label>
-        <p class="hint">Changes apply right away, even during a call. Plugged in a headset? Reopen this screen to see it.</p>
+        <div class="ringtone-row">
+          <label>Ringtone<select id="ringtone"></select></label>
+          <button type="button" id="btn-preview" class="ghost" title="Play once">Play</button>
+        </div>
+        <p class="hint">Changes apply right away, even during a call. Plugged in a headset? Reopen this screen to see it. Closing the window keeps the phone running in the tray / menu bar; quit from there.</p>
       </div>
       <h2>Troubleshooting</h2>
       <p class="hint">The app keeps a log of the current session. If something goes wrong, make a short call, then click below and drag the sip.log file into a message.</p>

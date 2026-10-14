@@ -56,8 +56,10 @@ int  sp_audio_dev_info(int idx, char *name, int name_len, char *driver,
 /* -1 for either means the system default. */
 int  sp_set_audio_devs(int capture, int playback);
 /* Ringer through the selected speaker. mode: 0 off, 1 ring (loops),
- * 2 call-waiting beep (plays once). */
-int  sp_ring(int mode);
+ * 2 call-waiting beep (plays once), 3 preview (rings once).
+ * tone picks one of sp_ringtone_count() built-in ringtones. */
+int  sp_ring(int mode, int tone);
+int  sp_ringtone_count(void);
 /* Use no sound device (for headless tests). */
 int  sp_use_null_audio(void);
 void sp_shutdown(void);

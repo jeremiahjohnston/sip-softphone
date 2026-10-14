@@ -443,9 +443,36 @@ int sp_set_audio_devs(int capture, int playback)
     return pjsua_set_snd_dev(capture, playback);
 }
 
-int sp_ring(int mode)
+/* Ringtones built from tone generator patterns: {freq1, freq2, on, off}. */
+typedef struct ring_pattern { int count; short t[8][4]; } ring_pattern;
+static const ring_pattern RINGTONES[] = {
+    /* 0 Chirp: two bright chirps */
+    { 2, {{1046, 1318, 350, 150}, {1046, 1318, 350, 2200}} },
+    /* 1 Classic: North American bell-style ring */
+    { 1, {{440, 480, 2000, 4000}} },
+    /* 2 British: double ring */
+    { 2, {{400, 450, 400, 200}, {400, 450, 400, 2000}} },
+    /* 3 Digital: quick beeps */
+    { 4, {{1400, 0, 90, 70}, {1400, 0, 90, 70}, {1400, 0, 90, 70}, {1400, 0, 90, 1500}} },
+    /* 4 Chime: rising three notes */
+    { 3, {{523, 0, 180, 40}, {659, 0, 180, 40}, {784, 0, 360, 1800}} },
+    /* 5 Soft: gentle low pulse */
+    { 2, {{392, 523, 500, 300}, {392, 523, 500, 2500}} },
+    /* 6 Office: European desk-phone trill */
+    { 6, {{880, 1100, 60, 0}, {1100, 880, 60, 0}, {880, 1100, 60, 0},
+          {1100, 880, 60, 0}, {880, 1100, 60, 0}, {1100, 880, 60, 2000}} },
+};
+#define RINGTONE_COUNT ((int)(sizeof(RINGTONES) / sizeof(RINGTONES[0])))
+
+int sp_ringtone_count(void)
 {
-    pjmedia_tone_desc t[3];
+    return RINGTONE_COUNT;
+}
+
+int sp_ring(int mode, int tone)
+{
+    pjmedia_tone_desc t[8];
+    int i;
     if (!g_started || g_ring_slot == PJSUA_INVALID_ID)
         return PJ_EINVALIDOP;
     ensure_thread();
@@ -455,11 +482,20 @@ int sp_ring(int mode)
         return 0;
 
     pj_bzero(t, sizeof(t));
-    if (mode == 1) {
-        /* Two short chirps, then a pause. */
-        t[0].freq1 = 1046; t[0].freq2 = 1318; t[0].on_msec = 350; t[0].off_msec = 150;
-        t[1].freq1 = 1046; t[1].freq2 = 1318; t[1].on_msec = 350; t[1].off_msec = 2200;
-        pjmedia_tonegen_play(g_ring_port, 2, t, PJMEDIA_TONEGEN_LOOP);
+    if (mode == 1 || mode == 3) {
+        const ring_pattern *p;
+        if (tone < 0 || tone >= RINGTONE_COUNT)
+            tone = 0;
+        p = &RINGTONES[tone];
+        for (i = 0; i < p->count; i++) {
+            t[i].freq1 = p->t[i][0];
+            t[i].freq2 = p->t[i][1];
+            t[i].on_msec = p->t[i][2];
+            t[i].off_msec = p->t[i][3];
+        }
+        /* mode 3 is a one-shot preview. */
+        pjmedia_tonegen_play(g_ring_port, p->count, t,
+                             mode == 1 ? PJMEDIA_TONEGEN_LOOP : 0);
     } else {
         t[0].freq1 = 440; t[0].on_msec = 180; t[0].off_msec = 120;
         t[1].freq1 = 440; t[1].on_msec = 180; t[1].off_msec = 100;

@@ -50,7 +50,8 @@ extern "C" {
         outputs: *mut c_int,
     ) -> c_int;
     fn sp_set_audio_devs(capture: c_int, playback: c_int) -> c_int;
-    fn sp_ring(mode: c_int) -> c_int;
+    fn sp_ring(mode: c_int, tone: c_int) -> c_int;
+    fn sp_ringtone_count() -> c_int;
     fn sp_use_null_audio() -> c_int;
     fn sp_shutdown();
 }
@@ -306,16 +307,27 @@ pub enum Ring {
     Ring,
     /// A short double beep for a second call arriving mid-call.
     Waiting,
+    /// Plays the ringtone once, for trying it out in settings.
+    Preview,
 }
 
-/// Plays or stops the ringer on the selected speaker.
-pub fn ring(mode: Ring) -> Result<(), Error> {
+/// Names of the built-in ringtones, in the order `ring` expects.
+pub const RINGTONES: &[&str] = &["Chirp", "Classic", "British", "Digital", "Chime", "Soft", "Office"];
+
+/// Plays or stops the ringer on the selected speaker. `tone` indexes [`RINGTONES`].
+pub fn ring(mode: Ring, tone: usize) -> Result<(), Error> {
     let m = match mode {
         Ring::Off => 0,
         Ring::Ring => 1,
         Ring::Waiting => 2,
+        Ring::Preview => 3,
     };
-    check(unsafe { sp_ring(m) }, "ring")
+    check(unsafe { sp_ring(m, tone as c_int) }, "ring")
+}
+
+/// Number of ringtones the C side knows; should equal `RINGTONES.len()`.
+pub fn ringtone_count() -> usize {
+    unsafe { sp_ringtone_count() as usize }
 }
 
 /// Runs without a sound device. Meant for headless tests.

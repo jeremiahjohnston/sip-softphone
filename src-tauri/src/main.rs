@@ -7,7 +7,13 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use sipcore::{Account, SipEvent, Transport};
-use tauri::{Emitter, Manager, UserAttentionType};
+use tauri::image::Image;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, UserAttentionType, WindowEvent};
+
+const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
+const TRAY_ICON_MISSED: &[u8] = include_bytes!("../icons/tray-missed.png");
 
 #[derive(Deserialize)]
 struct AccountForm {
@@ -135,8 +141,81 @@ fn sip_transfer_attended(call_id: i32, dest_call_id: i32) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn sip_ring(mode: sipcore::Ring) -> Result<(), String> {
-    sipcore::ring(mode).map_err(err)
+fn sip_ring(mode: sipcore::Ring, tone: Option<usize>) -> Result<(), String> {
+    sipcore::ring(mode, tone.unwrap_or(0)).map_err(err)
+}
+
+#[tauri::command]
+fn ringtones() -> Vec<&'static str> {
+    sipcore::RINGTONES.to_vec()
+}
+
+// ---------- tray / menu bar icon ----------
+
+/// The tray menu's "missed calls" line, kept so its text can be updated.
+static MISSED_ITEM: OnceLock<MenuItem<tauri::Wry>> = OnceLock::new();
+
+fn show_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "open", "Open SIP Softphone", true, None::<&str>)?;
+    let missed = MenuItem::with_id(app, "missed", "No missed calls", false, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &missed, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let _ = MISSED_ITEM.set(missed);
+
+    TrayIconBuilder::with_id("main")
+        .icon(Image::from_bytes(TRAY_ICON)?)
+        .tooltip("SIP Softphone")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => show_main(app),
+            "missed" => {
+                show_main(app);
+                let _ = app.emit("show-recents", ());
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+/// Called by the UI whenever the missed-call count or registration changes.
+#[tauri::command]
+fn set_tray_state(app: AppHandle, missed: u32, status: String) -> Result<(), String> {
+    let tray = app.tray_by_id("main").ok_or("no tray")?;
+    let icon = if missed > 0 { TRAY_ICON_MISSED } else { TRAY_ICON };
+    tray.set_icon(Some(Image::from_bytes(icon).map_err(|e| e.to_string())?))
+        .map_err(|e| e.to_string())?;
+    let line = match missed {
+        0 => "No missed calls".to_string(),
+        1 => "1 missed call".to_string(),
+        n => format!("{n} missed calls"),
+    };
+    let _ = tray.set_tooltip(Some(format!("SIP Softphone: {status}. {line}")));
+    if let Some(item) = MISSED_ITEM.get() {
+        let _ = item.set_text(&line);
+        let _ = item.set_enabled(missed > 0);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -179,6 +258,7 @@ fn main() {
                 4,
             )
             .map_err(|e| e.to_string())?;
+            build_tray(app.handle())?;
             // Record what audio hardware pjsip sees, for troubleshooting.
             for d in sipcore::audio_devices() {
                 log_line(&format!(
@@ -187,6 +267,14 @@ fn main() {
                 ));
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window keeps the phone running in the tray so calls
+            // still ring. Quit from the tray menu.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             sip_register,
@@ -200,16 +288,24 @@ fn main() {
             sip_transfer,
             sip_transfer_attended,
             sip_ring,
+            ringtones,
+            set_tray_state,
             show_log,
             audio_devices,
             set_audio_devices
         ])
         .build(tauri::generate_context!())
         .expect("failed to build app")
-        .run(|_app, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app, event| match event {
+            // Clicking the Dock icon brings the hidden window back.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => show_main(app),
+            tauri::RunEvent::Exit => {
                 sipcore::hangup_all();
                 sipcore::shutdown();
+            }
+            _ => {
+                let _ = app;
             }
         });
 }

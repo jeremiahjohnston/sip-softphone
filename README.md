@@ -13,7 +13,8 @@ Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 - Blind transfer ("Transfer now") and attended transfer ("Ask first", then Connect)
 - Call waiting: answer a second call, swap between them
 - Recents (call history with missed-call badge) and contacts
-- Ringtone on the selected speaker; the window comes forward on incoming calls
+- Seven ringtones on the selected speaker; the window comes forward on incoming calls
+- Tray / menu bar icon with a missed-call dot; closing the window keeps the phone running
 - Microphone and speaker selection
 
 ## Layout

@@ -29,12 +29,13 @@ fn main() {
     )
     .expect("start");
     println!("SIP stack started");
+    assert_eq!(sipcore::ringtone_count(), sipcore::RINGTONES.len(), "ringtone tables out of sync");
     if env::var_os("SIP_RING").is_some() {
-        println!("ring: {:?}", sipcore::ring(sipcore::Ring::Ring));
+        println!("ring: {:?}", sipcore::ring(sipcore::Ring::Ring, 4));
         thread::sleep(Duration::from_secs(3));
-        println!("waiting: {:?}", sipcore::ring(sipcore::Ring::Waiting));
+        println!("waiting: {:?}", sipcore::ring(sipcore::Ring::Waiting, 0));
         thread::sleep(Duration::from_secs(1));
-        println!("off: {:?}", sipcore::ring(sipcore::Ring::Off));
+        println!("off: {:?}", sipcore::ring(sipcore::Ring::Off, 0));
     }
     for dev in sipcore::audio_devices() {
         println!("audio device {dev:?}");

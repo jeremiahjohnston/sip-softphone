@@ -149,9 +149,19 @@ function render() {
   const missed = load(STORE.missed, 0);
   $("missed-badge").textContent = missed;
   $("missed-badge").classList.toggle("hidden", !missed);
+  syncTray(missed);
   if (view === "call") renderCalls();
   if (view === "recents") renderRecents();
   if (view === "contacts") renderContacts();
+}
+
+// Mirror the missed-call count and registration status on the tray icon.
+function syncTray(missed) {
+  const status = $("reg-text").textContent;
+  const key = missed + "|" + status;
+  if (syncTray.last === key) return;
+  syncTray.last = key;
+  invoke("set_tray_state", { missed, status }).catch(() => {});
 }
 
 function setTab(t) {
@@ -203,7 +213,7 @@ function updateRinger() {
     const mode = busy ? "waiting" : "ring";
     if (updateRinger.mode !== mode) {
       updateRinger.mode = mode;
-      invoke("sip_ring", { mode }).catch(() => {});
+      invoke("sip_ring", { mode, tone: Number($("ringtone").value) || 0 }).catch(() => {});
     }
   } else if (updateRinger.mode && updateRinger.mode !== "off") {
     updateRinger.mode = "off";
@@ -471,6 +481,7 @@ function saveContact(e) {
 function setReg(kind, text) {
   $("reg-dot").className = "dot " + kind;
   $("reg-text").textContent = text;
+  syncTray(load(STORE.missed, 0));
 }
 
 function fillForm() {
@@ -523,6 +534,11 @@ async function loadDevices() {
   fillSelect($("mic"), devices.filter((d) => d.inputs > 0), saved.mic);
   fillSelect($("speaker"), devices.filter((d) => d.outputs > 0), saved.speaker);
   $("ring-on").checked = saved.ring !== false;
+  if (!$("ringtone").options.length) {
+    const names = await invoke("ringtones").catch(() => []);
+    names.forEach((n, i) => $("ringtone").add(new Option(n, String(i))));
+  }
+  $("ringtone").value = String(saved.tone ?? 0);
   return devices;
 }
 
@@ -544,7 +560,12 @@ async function applyAudio(force) {
 }
 
 async function onAudioChange() {
-  save(STORE.audio, { mic: $("mic").value, speaker: $("speaker").value, ring: $("ring-on").checked });
+  save(STORE.audio, {
+    mic: $("mic").value,
+    speaker: $("speaker").value,
+    ring: $("ring-on").checked,
+    tone: Number($("ringtone").value) || 0,
+  });
   await applyAudio(true);
 }
 
@@ -665,6 +686,11 @@ $("btn-show-log").addEventListener("click", async () => {
 $("mic").addEventListener("change", onAudioChange);
 $("speaker").addEventListener("change", onAudioChange);
 $("ring-on").addEventListener("change", onAudioChange);
+$("ringtone").addEventListener("change", onAudioChange);
+$("btn-preview").addEventListener("click", () => {
+  if (liveCalls().length) return toast("Can't preview during a call.");
+  invoke("sip_ring", { mode: "preview", tone: Number($("ringtone").value) || 0 }).catch(() => {});
+});
 
 $("btn-clear-recents").addEventListener("click", () => {
   save(STORE.recents, []);
@@ -695,6 +721,7 @@ ticker = setInterval(tick, 1000);
 fillForm();
 refreshContactList();
 listen("sip", (e) => onSip(e.payload));
+listen("show-recents", () => setTab("recents"));
 applyAudio();
 if (!load(STORE.account, {}).server) settingsOpen = true;
 render();
@@ -705,6 +732,7 @@ function mockInvoke(cmd, args) {
   console.log("invoke", cmd, args);
   if (cmd === "sip_register") setTimeout(() => onSip({ type: "registration", registered: true, code: 200, reason: "OK" }), 400);
   if (cmd === "sip_call") return Promise.resolve((mockInvoke.n = (mockInvoke.n || 0) + 1));
+  if (cmd === "ringtones") return Promise.resolve(["Chirp", "Classic", "British", "Digital", "Chime", "Soft", "Office"]);
   if (cmd === "audio_devices")
     return Promise.resolve([
       { index: 0, name: "MacBook Pro Microphone", driver: "core audio", inputs: 1, outputs: 0 },
