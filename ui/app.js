@@ -592,6 +592,10 @@ function onSip(ev) {
       if (ev.done) toast(ev.code >= 200 && ev.code < 300 ? "Transferred." : `Transfer failed (${ev.code} ${ev.reason}).`);
       break;
     case "log": {
+      if (/Unable to open sound device|PJMEDIA_EAUD/.test(ev.line) && !onSip.audioWarned) {
+        onSip.audioWarned = true;
+        toast("Couldn't open the microphone or speaker. Check microphone permission and Audio settings.");
+      }
       const log = $("log");
       log.textContent += ev.line + "\n";
       if (log.textContent.length > 60000) log.textContent = log.textContent.slice(-40000);

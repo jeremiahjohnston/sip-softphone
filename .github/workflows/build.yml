@@ -51,6 +51,14 @@ jobs:
           export PJSIP_DIR="$PWD/deps/pjsip"
           set -o pipefail
           npx --yes @tauri-apps/cli@2 build --bundles dmg 2>&1 | tee build.log
+      - name: Inspect app
+        run: |
+          app=$(ls -d target/release/bundle/macos/*.app | head -1)
+          info=$(plutil -p "$app/Contents/Info.plist" | grep -E "Microphone|CFBundleIdentifier|LSMinimum" )
+          sig=$(codesign -dv --entitlements - "$app" 2>&1 | grep -E "Signature|flags|audio-input|Identifier" )
+          msg="$info"$'\n'"$sig"
+          msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
+          echo "::notice title=macOS app::$msg"
       - name: Report build errors
         if: failure()
         run: |
