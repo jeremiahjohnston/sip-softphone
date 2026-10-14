@@ -189,6 +189,11 @@ int sp_init(sp_event_cb cb, void *user, int log_level)
 
     pjsua_media_config_default(&media_cfg);
     media_cfg.ec_tail_len = 200;
+#if defined(__APPLE__)
+    /* Core Audio's built-in echo canceller (VPIO) ignores the chosen
+     * microphone and speaker, so use pjmedia's own canceller instead. */
+    media_cfg.ec_options |= PJMEDIA_ECHO_USE_SW_ECHO;
+#endif
     g_clock_rate = media_cfg.clock_rate;
 
     status = pjsua_init(&cfg, &log_cfg, &media_cfg);
