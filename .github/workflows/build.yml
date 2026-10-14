@@ -53,10 +53,15 @@ jobs:
           npx --yes @tauri-apps/cli@2 build --bundles dmg 2>&1 | tee build.log
       - name: Inspect app
         run: |
-          app=$(ls -d target/release/bundle/macos/*.app | head -1)
-          info=$(plutil -p "$app/Contents/Info.plist" | grep -E "Microphone|CFBundleIdentifier|LSMinimum" )
-          sig=$(codesign -dv --entitlements - "$app" 2>&1 | grep -E "Signature|flags|audio-input|Identifier" )
-          msg="$info"$'\n'"$sig"
+          dmg=$(ls target/release/bundle/dmg/*.dmg | head -1)
+          hdiutil attach -nobrowse -readonly -mountpoint /tmp/sp "$dmg" >/dev/null
+          app=$(ls -d /tmp/sp/*.app | head -1)
+          info=$(plutil -p "$app/Contents/Info.plist" | grep -E "Microphone|CFBundleIdentifier|LSMinimum"  || true)
+          sig=$(codesign -dv --entitlements - "$app" 2>&1 | grep -E "Signature|flags|audio-input|Identifier"  || true)
+          libs=$(otool -L "$app/Contents/MacOS/sip-softphone" | grep -iE "audio|coreaudio"  || true)
+          devs=$(nm "$app/Contents/MacOS/sip-softphone" | grep -ciE "coreaudio_factory|ca_factory" || true)
+          hdiutil detach /tmp/sp >/dev/null
+          msg="$info"$'\n'"$sig"$'\n'"$libs"$'\n'"coreaudio factory symbols: $devs"
           msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
           echo "::notice title=macOS app::$msg"
       - name: Report build errors
