@@ -41,8 +41,32 @@ fn link_pkg_config(pj_dir: &Path, build: &mut cc::Build) {
 
     let lib = pkg_config::Config::new()
         .statik(true)
+        .cargo_metadata(false)
         .probe("libpjproject")
         .expect("libpjproject not found; check PJSIP_DIR");
+
+    // Emit the link flags ourselves so we can leave out pjsua2 (the C++ API)
+    // and the C++ runtime it drags in; we only use the C API.
+    for dir in &lib.link_paths {
+        println!("cargo:rustc-link-search=native={}", dir.display());
+    }
+    for name in &lib.libs {
+        if name.starts_with("pjsua2") || name == "stdc++" || name == "c++" {
+            continue;
+        }
+        let is_static = lib
+            .link_paths
+            .iter()
+            .any(|d| d.join(format!("lib{name}.a")).exists());
+        let kind = if is_static { "static" } else { "dylib" };
+        println!("cargo:rustc-link-lib={kind}={name}");
+    }
+    for dir in &lib.framework_paths {
+        println!("cargo:rustc-link-search=framework={}", dir.display());
+    }
+    for fw in &lib.frameworks {
+        println!("cargo:rustc-link-lib=framework={fw}");
+    }
     for inc in &lib.include_paths {
         build.include(inc);
     }

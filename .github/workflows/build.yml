@@ -56,8 +56,9 @@ jobs:
         run: |
           # Surface the end of the log as an annotation so it shows on the run summary.
           [ -f build.log ] || exit 0
-          msg=$(grep -iE "error|undefined|ld:|panicked|failed" build.log | tail -40)
-          [ -n "$msg" ] || msg=$(tail -40 build.log)
+          # Skip the huge linker command line; keep what the linker said.
+          msg=$(sed 's/\x1b\[[0-9;]*m//g' build.log | grep -v '"cc"' | grep -iE -A40 "error|undefined" | cut -c1-300 | tail -60)
+          [ -n "$msg" ] || msg=$(tail -40 build.log | cut -c1-300)
           msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
           echo "::error title=macOS build::$msg"
       - uses: actions/upload-artifact@v4
