@@ -436,11 +436,15 @@ int sp_set_audio_devs(int capture, int playback)
     if (!g_started)
         return PJ_EINVALIDOP;
     ensure_thread();
-    if (capture < 0)
-        capture = PJMEDIA_AUD_DEFAULT_CAPTURE_DEV;
-    if (playback < 0)
-        playback = PJMEDIA_AUD_DEFAULT_PLAYBACK_DEV;
-    return pjsua_set_snd_dev(capture, playback);
+    pjsua_snd_dev_param p;
+    pjsua_snd_dev_param_default(&p);
+    p.capture_dev = capture < 0 ? PJMEDIA_AUD_DEFAULT_CAPTURE_DEV : capture;
+    p.playback_dev = playback < 0 ? PJMEDIA_AUD_DEFAULT_PLAYBACK_DEV : playback;
+    /* Only switch live during a call; otherwise just remember the choice so
+     * the microphone isn't opened while the phone is idle. */
+    if (pjsua_call_get_count() == 0)
+        p.mode |= PJSUA_SND_DEV_NO_IMMEDIATE_OPEN;
+    return pjsua_set_snd_dev2(&p);
 }
 
 /* Ringtones built from tone generator patterns: {freq1, freq2, on, off}. */
@@ -463,6 +467,25 @@ static const ring_pattern RINGTONES[] = {
           {1100, 880, 60, 0}, {880, 1100, 60, 0}, {1100, 880, 60, 2000}} },
 };
 #define RINGTONE_COUNT ((int)(sizeof(RINGTONES) / sizeof(RINGTONES[0])))
+
+/* One-shot tones (preview, call-waiting beep) leave the tone generator
+ * connected to the speaker, which keeps the sound device and microphone open.
+ * Unhook it once the tone has finished. */
+static void ring_done_cb(void *user_data)
+{
+    PJ_UNUSED_ARG(user_data);
+    if (g_ring_port && !pjmedia_tonegen_is_busy(g_ring_port))
+        pjsua_conf_disconnect(g_ring_slot, 0);
+}
+
+static void unhook_after(const pjmedia_tone_desc *t, int count)
+{
+    unsigned ms = 200;
+    int i;
+    for (i = 0; i < count; i++)
+        ms += t[i].on_msec + t[i].off_msec;
+    pjsua_schedule_timer2(&ring_done_cb, NULL, ms);
+}
 
 int sp_ringtone_count(void)
 {
@@ -496,10 +519,13 @@ int sp_ring(int mode, int tone)
         /* mode 3 is a one-shot preview. */
         pjmedia_tonegen_play(g_ring_port, p->count, t,
                              mode == 1 ? PJMEDIA_TONEGEN_LOOP : 0);
+        if (mode == 3)
+            unhook_after(t, p->count);
     } else {
         t[0].freq1 = 440; t[0].on_msec = 180; t[0].off_msec = 120;
         t[1].freq1 = 440; t[1].on_msec = 180; t[1].off_msec = 100;
         pjmedia_tonegen_play(g_ring_port, 2, t, 0);
+        unhook_after(t, 2);
     }
     return pjsua_conf_connect(g_ring_slot, 0);
 }

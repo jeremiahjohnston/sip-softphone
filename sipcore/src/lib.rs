@@ -291,7 +291,8 @@ pub fn audio_devices() -> Vec<AudioDevice> {
 }
 
 /// Picks the microphone and speaker by [`AudioDevice::index`]. `None` uses
-/// the system default. Takes effect immediately, including during a call.
+/// the system default. Switches live during a call; otherwise the device
+/// stays closed until the next call or ring.
 pub fn set_audio_devices(capture: Option<i32>, playback: Option<i32>) -> Result<(), Error> {
     check(
         unsafe { sp_set_audio_devs(capture.unwrap_or(-1), playback.unwrap_or(-1)) },

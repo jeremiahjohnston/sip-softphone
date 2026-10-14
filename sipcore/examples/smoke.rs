@@ -30,6 +30,18 @@ fn main() {
     .expect("start");
     println!("SIP stack started");
     assert_eq!(sipcore::ringtone_count(), sipcore::RINGTONES.len(), "ringtone tables out of sync");
+    if env::var_os("SIP_PICK_DEV").is_some() {
+        // Choosing devices while idle must not open the microphone.
+        println!("set devices: {:?}", sipcore::set_audio_devices(Some(0), Some(0)));
+        thread::sleep(Duration::from_secs(3));
+    }
+    if env::var_os("SIP_PREVIEW").is_some() {
+        // The sound device should close by itself once the preview ends.
+        println!("preview: {:?}", sipcore::ring(sipcore::Ring::Preview, 4));
+        thread::sleep(Duration::from_secs(6));
+        println!("waiting beep: {:?}", sipcore::ring(sipcore::Ring::Waiting, 0));
+        thread::sleep(Duration::from_secs(4));
+    }
     if env::var_os("SIP_RING").is_some() {
         println!("ring: {:?}", sipcore::ring(sipcore::Ring::Ring, 4));
         thread::sleep(Duration::from_secs(3));
