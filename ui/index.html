@@ -142,8 +142,13 @@
         <label class="check"><input type="checkbox" id="ring-on" checked /> Play a ringtone for incoming calls</label>
         <p class="hint">Changes apply right away, even during a call. Plugged in a headset? Reopen this screen to see it.</p>
       </div>
+      <h2>Troubleshooting</h2>
+      <p class="hint">The app keeps a log of the current session. If something goes wrong, make a short call, then click below and drag the sip.log file into a message.</p>
+      <div class="row-end left">
+        <button type="button" id="btn-show-log" class="ghost">Show log file</button>
+      </div>
       <details>
-        <summary>SIP log</summary>
+        <summary>View log here</summary>
         <pre id="log"></pre>
       </details>
     </section>

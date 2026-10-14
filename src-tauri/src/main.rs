@@ -2,6 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Deserialize;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
 use sipcore::{Account, SipEvent, Transport};
 use tauri::{Emitter, Manager, UserAttentionType};
 
@@ -14,6 +18,52 @@ struct AccountForm {
     auth_user: Option<String>,
     password: String,
     display_name: Option<String>,
+}
+
+/// The current session's SIP log, rewritten each launch.
+static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+static LOG: OnceLock<Mutex<File>> = OnceLock::new();
+
+fn open_log(dir: PathBuf) {
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join("sip.log");
+    if let Ok(file) = File::create(&path) {
+        let _ = LOG.set(Mutex::new(file));
+        let _ = LOG_PATH.set(path);
+    }
+}
+
+fn log_line(line: &str) {
+    if let Some(Ok(mut f)) = LOG.get().map(|m| m.lock()) {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
+fn write_log(ev: &SipEvent) {
+    match ev {
+        SipEvent::Log { line, .. } => log_line(line),
+        other => log_line(&format!(">> {}", serde_json::to_string(other).unwrap_or_default())),
+    }
+}
+
+/// Opens the folder holding the log with the file selected.
+#[tauri::command]
+fn show_log() -> Result<String, String> {
+    let path = LOG_PATH.get().ok_or("No log file")?;
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    #[cfg(target_os = "windows")]
+    let r = std::process::Command::new("explorer")
+        .arg(format!("/select,{}", path.display()))
+        .spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let r = std::process::Command::new("xdg-open")
+        .arg(path.parent().unwrap_or(path))
+        .spawn();
+    r.map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
 }
 
 fn err(e: sipcore::Error) -> String {
@@ -103,8 +153,18 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle().clone();
+            if let Ok(dir) = app.path().app_log_dir() {
+                open_log(dir);
+            }
+            log_line(&format!(
+                "SIP Softphone {} on {} {}",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            ));
             sipcore::start(
                 move |ev: SipEvent| {
+                    write_log(&ev);
                     if let SipEvent::Incoming { .. } = ev {
                         // Bring the phone forward so the call can be answered.
                         if let Some(w) = handle.get_webview_window("main") {
@@ -119,6 +179,13 @@ fn main() {
                 4,
             )
             .map_err(|e| e.to_string())?;
+            // Record what audio hardware pjsip sees, for troubleshooting.
+            for d in sipcore::audio_devices() {
+                log_line(&format!(
+                    "audio device {}: {} ({}) in={} out={}",
+                    d.index, d.name, d.driver, d.inputs, d.outputs
+                ));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -133,6 +200,7 @@ fn main() {
             sip_transfer,
             sip_transfer_attended,
             sip_ring,
+            show_log,
             audio_devices,
             set_audio_devices
         ])

@@ -655,6 +655,13 @@ $("btn-unregister").addEventListener("click", async () => {
   try { await invoke("sip_unregister"); } catch {}
   setReg("", "Not registered");
 });
+$("btn-show-log").addEventListener("click", async () => {
+  try {
+    await invoke("show_log");
+  } catch (err) {
+    toast("Couldn't open the log folder: " + err);
+  }
+});
 $("mic").addEventListener("change", onAudioChange);
 $("speaker").addEventListener("change", onAudioChange);
 $("ring-on").addEventListener("change", onAudioChange);

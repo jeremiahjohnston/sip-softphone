@@ -187,3 +187,4 @@ pre {
   border-radius: 10px; background: var(--text); color: var(--bg); text-align: center;
 }
 input::-webkit-calendar-picker-indicator { display: none !important; }
+.row-end.left { justify-content: flex-start; }
