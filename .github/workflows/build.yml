@@ -49,7 +49,17 @@ jobs:
       - name: Build app
         run: |
           export PJSIP_DIR="$PWD/deps/pjsip"
-          npx --yes @tauri-apps/cli@2 build --bundles dmg
+          set -o pipefail
+          npx --yes @tauri-apps/cli@2 build --bundles dmg 2>&1 | tee build.log
+      - name: Report build errors
+        if: failure()
+        run: |
+          # Surface the end of the log as an annotation so it shows on the run summary.
+          [ -f build.log ] || exit 0
+          msg=$(grep -iE "error|undefined|ld:|panicked|failed" build.log | tail -40)
+          [ -n "$msg" ] || msg=$(tail -40 build.log)
+          msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
+          echo "::error title=macOS build::$msg"
       - uses: actions/upload-artifact@v4
         with:
           name: sip-softphone-macos
