@@ -4,7 +4,7 @@ A simple, modern SIP softphone that registers straight to your own PBX
 (FreePBX / Asterisk). No vendor cloud, no account sign-up.
 
 Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
-[PJSIP](https://www.pjsip.org). macOS and Windows today, Linux later.
+[PJSIP](https://www.pjsip.org). Runs on macOS, Windows and Linux.
 
 ## Status
 
