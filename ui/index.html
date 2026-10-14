@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SIP Softphone</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="who">
+      <span id="reg-dot" class="dot"></span>
+      <div>
+        <div id="acct-name" class="acct">No account</div>
+        <div id="reg-text" class="sub">Not registered</div>
+      </div>
+    </div>
+    <button id="btn-settings" class="icon" title="Account">⚙</button>
+  </header>
+
+  <main>
+    <!-- Dialer -->
+    <section id="view-dial" class="view">
+      <input id="dial" class="dial" placeholder="Enter number or extension" autocomplete="off" />
+      <div class="pad" id="pad"></div>
+      <button id="btn-call" class="round green" title="Call">📞</button>
+    </section>
+
+    <!-- Active / outgoing / incoming call -->
+    <section id="view-call" class="view hidden">
+      <div class="callee">
+        <div id="call-remote" class="remote"></div>
+        <div id="call-state" class="sub"></div>
+        <div id="call-timer" class="timer"></div>
+      </div>
+      <div id="incoming-actions" class="row hidden">
+        <button id="btn-decline" class="round red" title="Decline">✕</button>
+        <button id="btn-answer" class="round green" title="Answer">📞</button>
+      </div>
+      <div id="call-actions" class="hidden">
+        <div class="grid3">
+          <button id="btn-mute" class="toggle">🎙<span>Mute</span></button>
+          <button id="btn-hold" class="toggle">⏸<span>Hold</span></button>
+          <button id="btn-keypad" class="toggle">⌗<span>Keypad</span></button>
+        </div>
+        <div class="pad hidden" id="dtmf-pad"></div>
+        <button id="btn-hangup" class="round red" title="Hang up">✕</button>
+      </div>
+    </section>
+
+    <!-- Account settings -->
+    <section id="view-settings" class="view hidden">
+      <h2>Account</h2>
+      <form id="acct-form">
+        <label>Server (FreePBX host or IP)<input name="server" required placeholder="pbx.example.lan" /></label>
+        <div class="two">
+          <label>Port<input name="port" type="number" min="0" max="65535" placeholder="5060" /></label>
+          <label>Transport
+            <select name="transport">
+              <option value="udp">UDP</option>
+              <option value="tcp">TCP</option>
+              <option value="tls">TLS</option>
+            </select>
+          </label>
+        </div>
+        <label>Extension<input name="user" required placeholder="1001" /></label>
+        <label>Password<input name="password" type="password" required autocomplete="off" /></label>
+        <label>Auth ID (optional)<input name="auth_user" placeholder="same as extension" /></label>
+        <label>Display name (optional)<input name="display_name" /></label>
+        <p class="hint">Settings except the password are saved on this computer. You'll re-enter the password each launch for now.</p>
+        <div class="row">
+          <button type="button" id="btn-unregister" class="ghost">Sign out</button>
+          <button type="submit" class="primary">Register</button>
+        </div>
+      </form>
+      <details>
+        <summary>SIP log</summary>
+        <pre id="log"></pre>
+      </details>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+[package]
+name = "sipcore"
+version = "0.1.0"
+edition = "2021"
+description = "Safe Rust wrapper around a small pjsua (PJSIP) shim"
+links = "pjsua"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+cc = "1"
+pkg-config = "0.3"
