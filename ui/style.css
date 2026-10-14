@@ -107,3 +107,4 @@ pre {
   position: fixed; left: 16px; right: 16px; bottom: 16px; padding: 10px 14px;
   border-radius: 10px; background: var(--text); color: var(--bg); text-align: center;
 }
+.audio { display: flex; flex-direction: column; gap: 12px; }

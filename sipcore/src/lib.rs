@@ -37,6 +37,17 @@ extern "C" {
     fn sp_send_dtmf(call_id: c_int, digits: *const c_char) -> c_int;
     fn sp_set_mute(call_id: c_int, mute: c_int) -> c_int;
     fn sp_set_hold(call_id: c_int, hold: c_int) -> c_int;
+    fn sp_audio_dev_count() -> c_int;
+    fn sp_audio_dev_info(
+        idx: c_int,
+        name: *mut c_char,
+        name_len: c_int,
+        driver: *mut c_char,
+        driver_len: c_int,
+        inputs: *mut c_int,
+        outputs: *mut c_int,
+    ) -> c_int;
+    fn sp_set_audio_devs(capture: c_int, playback: c_int) -> c_int;
     fn sp_use_null_audio() -> c_int;
     fn sp_shutdown();
 }
@@ -82,6 +93,15 @@ pub struct Account {
     pub auth_user: String,
     pub password: String,
     pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AudioDevice {
+    pub index: i32,
+    pub name: String,
+    pub driver: String,
+    pub inputs: u32,
+    pub outputs: u32,
 }
 
 #[derive(Debug)]
@@ -214,6 +234,45 @@ pub fn set_mute(call_id: i32, mute: bool) -> Result<(), Error> {
 
 pub fn set_hold(call_id: i32, hold: bool) -> Result<(), Error> {
     check(unsafe { sp_set_hold(call_id, hold as c_int) }, "hold")
+}
+
+/// Lists sound devices. Plugged-in devices show up when no call is active.
+pub fn audio_devices() -> Vec<AudioDevice> {
+    let count = unsafe { sp_audio_dev_count() };
+    (0..count)
+        .filter_map(|i| {
+            let mut name = [0 as c_char; 256];
+            let mut driver = [0 as c_char; 64];
+            let (mut inputs, mut outputs) = (0, 0);
+            let status = unsafe {
+                sp_audio_dev_info(
+                    i,
+                    name.as_mut_ptr(),
+                    name.len() as c_int,
+                    driver.as_mut_ptr(),
+                    driver.len() as c_int,
+                    &mut inputs,
+                    &mut outputs,
+                )
+            };
+            (status == 0).then(|| AudioDevice {
+                index: i,
+                name: cstr(name.as_ptr()),
+                driver: cstr(driver.as_ptr()),
+                inputs: inputs.max(0) as u32,
+                outputs: outputs.max(0) as u32,
+            })
+        })
+        .collect()
+}
+
+/// Picks the microphone and speaker by [`AudioDevice::index`]. `None` uses
+/// the system default. Takes effect immediately, including during a call.
+pub fn set_audio_devices(capture: Option<i32>, playback: Option<i32>) -> Result<(), Error> {
+    check(
+        unsafe { sp_set_audio_devs(capture.unwrap_or(-1), playback.unwrap_or(-1)) },
+        "audio device",
+    )
 }
 
 /// Runs without a sound device. Meant for headless tests.

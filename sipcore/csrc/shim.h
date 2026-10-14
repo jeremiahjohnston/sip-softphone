@@ -42,6 +42,14 @@ void sp_hangup_all(void);
 int  sp_send_dtmf(int call_id, const char *digits);
 int  sp_set_mute(int call_id, int mute);
 int  sp_set_hold(int call_id, int hold);
+/* Audio devices. Re-scans hardware first when no call is active.
+ * Returns the number of devices. */
+int  sp_audio_dev_count(void);
+/* Fills name/driver for device idx. Returns 0 on success. */
+int  sp_audio_dev_info(int idx, char *name, int name_len, char *driver,
+                       int driver_len, int *inputs, int *outputs);
+/* -1 for either means the system default. */
+int  sp_set_audio_devs(int capture, int playback);
 /* Use no sound device (for headless tests). */
 int  sp_use_null_audio(void);
 void sp_shutdown(void);

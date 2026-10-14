@@ -365,6 +365,47 @@ int sp_set_hold(int call_id, int hold)
     return pjsua_call_reinvite(call_id, PJSUA_CALL_UNHOLD, NULL);
 }
 
+int sp_audio_dev_count(void)
+{
+    if (!g_started)
+        return 0;
+    ensure_thread();
+    /* Refreshing invalidates device ids in use, so only do it when idle. */
+    if (pjsua_call_get_count() == 0)
+        pjmedia_aud_dev_refresh();
+    return (int)pjmedia_aud_dev_count();
+}
+
+int sp_audio_dev_info(int idx, char *name, int name_len, char *driver,
+                      int driver_len, int *inputs, int *outputs)
+{
+    pjmedia_aud_dev_info info;
+    pj_status_t status;
+    if (!g_started)
+        return PJ_EINVALIDOP;
+    ensure_thread();
+    status = pjmedia_aud_dev_get_info(idx, &info);
+    if (status != PJ_SUCCESS)
+        return status;
+    snprintf(name, name_len, "%s", info.name);
+    snprintf(driver, driver_len, "%s", info.driver);
+    *inputs = (int)info.input_count;
+    *outputs = (int)info.output_count;
+    return 0;
+}
+
+int sp_set_audio_devs(int capture, int playback)
+{
+    if (!g_started)
+        return PJ_EINVALIDOP;
+    ensure_thread();
+    if (capture < 0)
+        capture = PJMEDIA_AUD_DEFAULT_CAPTURE_DEV;
+    if (playback < 0)
+        playback = PJMEDIA_AUD_DEFAULT_PLAYBACK_DEV;
+    return pjsua_set_snd_dev(capture, playback);
+}
+
 int sp_use_null_audio(void)
 {
     if (!g_started)

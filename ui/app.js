@@ -13,6 +13,7 @@ const KEYS = [
   ["*", ""], ["0", "+"], ["#", ""],
 ];
 const STORE_KEY = "softphone.account";
+const AUDIO_KEY = "softphone.audio";
 const STATE_TEXT = {
   calling: "Calling…",
   ringing: "Ringing…",
@@ -140,6 +141,57 @@ async function register(e) {
   }
 }
 
+// ---------- audio devices ----------
+
+// Saved by device name, since device numbers can change between launches.
+function loadAudio() {
+  try {
+    return JSON.parse(localStorage.getItem(AUDIO_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function fillSelect(sel, devices, saved) {
+  sel.innerHTML = "";
+  const def = new Option("System default", "");
+  sel.add(def);
+  for (const d of devices) sel.add(new Option(d.name, d.name));
+  sel.value = devices.some((d) => d.name === saved) ? saved : "";
+}
+
+async function loadDevices() {
+  const devices = await invoke("audio_devices");
+  const saved = loadAudio();
+  fillSelect($("mic"), devices.filter((d) => d.inputs > 0), saved.mic);
+  fillSelect($("speaker"), devices.filter((d) => d.outputs > 0), saved.speaker);
+  return devices;
+}
+
+async function applyAudio(force) {
+  const devices = await loadDevices();
+  const mic = $("mic").value;
+  const speaker = $("speaker").value;
+  // Nothing chosen: leave pjsip on its defaults (and don't open the mic at launch).
+  if (!force && !mic && !speaker) return;
+  const find = (name, key) => devices.find((d) => d.name === name && d[key] > 0);
+  try {
+    await invoke("set_audio_devices", {
+      capture: mic ? find(mic, "inputs")?.index ?? null : null,
+      playback: speaker ? find(speaker, "outputs")?.index ?? null : null,
+    });
+  } catch (err) {
+    toast("Couldn't switch audio device.");
+  }
+}
+
+async function onAudioChange() {
+  try {
+    localStorage.setItem(AUDIO_KEY, JSON.stringify({ mic: $("mic").value, speaker: $("speaker").value }));
+  } catch {}
+  await applyAudio(true);
+}
+
 // ---------- calls ----------
 
 async function dial() {
@@ -224,8 +276,13 @@ $("btn-keypad").addEventListener("click", () => {
 $("btn-settings").addEventListener("click", () => {
   const open = !$("view-settings").classList.contains("hidden");
   if (open) renderCall();
-  else show("settings");
+  else {
+    show("settings");
+    loadDevices();
+  }
 });
+$("mic").addEventListener("change", onAudioChange);
+$("speaker").addEventListener("change", onAudioChange);
 $("acct-form").addEventListener("submit", register);
 $("btn-unregister").addEventListener("click", async () => {
   try { await invoke("sip_unregister"); } catch {}
@@ -234,6 +291,7 @@ $("btn-unregister").addEventListener("click", async () => {
 
 fillForm();
 listen("sip", (e) => onSip(e.payload));
+applyAudio();
 if (!loadAccount().server) show("settings");
 
 // ---------- browser preview (no Tauri) ----------
@@ -242,6 +300,12 @@ function mockInvoke(cmd, args) {
   console.log("invoke", cmd, args);
   if (cmd === "sip_register") setTimeout(() => onSip({ type: "registration", registered: true, code: 200, reason: "OK" }), 400);
   if (cmd === "sip_call") return Promise.resolve(0);
+  if (cmd === "audio_devices")
+    return Promise.resolve([
+      { index: 0, name: "MacBook Pro Microphone", driver: "core audio", inputs: 1, outputs: 0 },
+      { index: 1, name: "MacBook Pro Speakers", driver: "core audio", inputs: 0, outputs: 2 },
+      { index: 2, name: "Jabra Evolve2 65", driver: "core audio", inputs: 1, outputs: 2 },
+    ]);
   return Promise.resolve();
 }
 function mockListen() {

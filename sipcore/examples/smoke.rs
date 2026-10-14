@@ -28,6 +28,9 @@ fn main() {
     )
     .expect("start");
     println!("SIP stack started");
+    for dev in sipcore::audio_devices() {
+        println!("audio device {dev:?}");
+    }
     if env::var_os("SIP_NULL_AUDIO").is_some() {
         sipcore::use_null_audio().expect("null audio");
     }

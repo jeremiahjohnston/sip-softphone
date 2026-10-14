@@ -74,6 +74,16 @@ fn sip_hold(call_id: i32, hold: bool) -> Result<(), String> {
     sipcore::set_hold(call_id, hold).map_err(err)
 }
 
+#[tauri::command]
+fn audio_devices() -> Vec<sipcore::AudioDevice> {
+    sipcore::audio_devices()
+}
+
+#[tauri::command]
+fn set_audio_devices(capture: Option<i32>, playback: Option<i32>) -> Result<(), String> {
+    sipcore::set_audio_devices(capture, playback).map_err(err)
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -95,7 +105,9 @@ fn main() {
             sip_hangup,
             sip_dtmf,
             sip_mute,
-            sip_hold
+            sip_hold,
+            audio_devices,
+            set_audio_devices
         ])
         .build(tauri::generate_context!())
         .expect("failed to build app")
