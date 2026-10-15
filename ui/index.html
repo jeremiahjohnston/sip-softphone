@@ -39,7 +39,7 @@
     <div class="head-actions">
       <button id="btn-dnd" class="icon dnd" title="Do Not Disturb is off"><svg><use href="#i-moon"/></svg></button>
       <button id="btn-vm" class="icon vm" title="Call voicemail"><svg><use href="#i-vm"/></svg><i id="vm-badge" class="badge hidden"></i></button>
-      <button id="btn-settings" class="icon" title="Settings"><svg><use href="#i-gear"/></svg></button>
+      <button id="btn-settings" class="icon settings" title="Settings"><svg><use href="#i-gear"/></svg><i id="update-dot" class="dot hidden"></i></button>
     </div>
   </header>
 
@@ -176,6 +176,12 @@
         <label>Hang up / decline<input id="hk-hangup" autocomplete="off" /></label>
         <label>Mute<input id="hk-mute" autocomplete="off" /></label>
         <p class="hint">Write keys like CommandOrControl+Alt+Shift+A (Command on Mac, Ctrl elsewhere). Links like tel:5551234 and sip:1002@pbx open here and dial.</p>
+      </div>
+      <h2>Updates</h2>
+      <p class="hint" id="update-status">Checks for new versions at startup and every few hours.</p>
+      <div class="row-end left">
+        <button type="button" id="btn-update-check" class="ghost">Check for updates</button>
+        <button type="button" id="btn-update-install" class="primary hidden">Install and restart</button>
       </div>
       <h2>Troubleshooting</h2>
       <p class="hint">The app keeps a log of the current session. If something goes wrong, make a short call, then click below and drag the sip.log file into a message.</p>

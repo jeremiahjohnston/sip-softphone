@@ -1,3 +1,4 @@
 /target
 /deps
 /src-tauri/gen
+/tauri.ci.json
