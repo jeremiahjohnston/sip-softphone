@@ -101,6 +101,15 @@ jobs:
           msg="$info"$'\n'"$sig"$'\n'"$libs"$'\n'"coreaudio factory symbols: $devs"$'\n'"Gatekeeper: $gk"
           msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
           echo "::notice title=macOS app::$msg"
+      - name: Check install script
+        run: |
+          # The parts of scripts/install-macos.sh that depend on this build's output.
+          feed='{"version":"1.2.3","platforms":{"darwin-aarch64":{"url":"https://example.com/a.tar.gz"}}}'
+          [ "$(printf '%s' "$feed" | plutil -extract platforms.darwin-aarch64.url raw -o - -)" = https://example.com/a.tar.gz ]
+          [ "$(printf '%s' "$feed" | plutil -extract version raw -o - -)" = 1.2.3 ]
+          tgz=$(ls target/release/bundle/macos/*.app.tar.gz 2>/dev/null | head -1 || true)
+          [ -z "$tgz" ] || tar -tzf "$tgz" | grep -q '^SIP Softphone.app/'
+          bash -n scripts/install-macos.sh
       - name: Report build errors
         if: failure()
         run: |

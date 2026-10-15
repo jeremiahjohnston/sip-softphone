@@ -33,7 +33,7 @@ Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 | `sipcore/` | Rust wrapper around PJSIP. `csrc/shim.c` is a small C layer over `pjsua`, `src/lib.rs` the safe Rust API. |
 | `src-tauri/` | The desktop app: Tauri commands that call `sipcore`, and SIP events forwarded to the UI. |
 | `ui/` | Plain HTML/CSS/JS front end (no build step). Opening `ui/index.html` in a browser shows a mock preview. |
-| `scripts/` | Build PJSIP and run the app on each OS. |
+| `scripts/` | Build PJSIP, run the app on each OS, the macOS installer, and the release script. |
 
 ## Downloads
 
@@ -44,11 +44,25 @@ the app finds new releases itself and installs them in place from
 **Settings > Updates**. Builds from other branches are under **Artifacts** on
 the Actions run.
 
-On macOS, builds are only notarized once the Apple secrets under
-[macOS signing](#macos-signing) are set. Until then macOS says the app is
-damaged on the first install: drag it to Applications and run
+### Installing on macOS
+
+Open **Terminal** (press Cmd+Space, type "Terminal", press Return), paste this
+line and press Return:
+
+```bash
+curl -fsSL https://github.com/jeremiahjohnston/sip-softphone/releases/latest/download/install-macos.sh | bash
+```
+
+It downloads the latest release into Applications and opens it. Run it again
+any time to reinstall; normal updates come from inside the app.
+
+This avoids the "SIP Softphone is damaged and can't be opened" message, which
+macOS shows for apps downloaded in a browser that Apple hasn't notarized. The
+app isn't notarized until the Apple secrets under
+[macOS signing](#macos-signing) are set. If you used the .dmg from the
+Releases page instead and see that message, run
 `xattr -cr "/Applications/SIP Softphone.app"` once. Updates installed from
-inside the app don't need this.
+inside the app never need either.
 
 ### Release setup
 
