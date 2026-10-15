@@ -44,8 +44,9 @@ the app finds new releases itself and installs them in place from
 **Settings > Updates**. Builds from other branches are under **Artifacts** on
 the Actions run.
 
-On macOS the app is not notarized yet. If macOS says it's damaged on the first
-install, drag it to Applications and run
+On macOS, builds are only notarized once the Apple secrets under
+[macOS signing](#macos-signing) are set. Until then macOS says the app is
+damaged on the first install: drag it to Applications and run
 `xattr -cr "/Applications/SIP Softphone.app"` once. Updates installed from
 inside the app don't need this.
 
@@ -63,6 +64,62 @@ Releases need two things in the repository settings:
    public one for downloads, set the variable `RELEASE_REPO` to it
    (`owner/name`) and the secret `RELEASE_TOKEN` to a token that can create
    releases there.
+
+### macOS signing
+
+macOS only opens a downloaded app without warnings if it is signed with an
+Apple Developer ID and notarized by Apple. That needs a paid Apple Developer
+account (99 USD a year). Once the five secrets below are set, the macOS build
+signs and notarizes the app itself, and the run's "macOS app" note ends with
+`Gatekeeper: ... accepted ... source=Notarized Developer ID`.
+
+1. **Join the Apple Developer Program.** Go to
+   <https://developer.apple.com/programs/enroll/>, click **Start your
+   enrollment**, sign in with your Apple Account, choose **Individual / Sole
+   Proprietor** and pay. Approval can take a day or two.
+2. **Make a certificate request on your Mac.** Open **Keychain Access**
+   (Spotlight: "Keychain Access"). In the menu bar choose **Keychain Access >
+   Certificate Assistant > Request a Certificate From a Certificate
+   Authority...**. Enter your email and name, leave CA Email empty, pick
+   **Saved to disk**, click **Continue** and save the file to the Desktop.
+3. **Create the Developer ID certificate.** Go to
+   <https://developer.apple.com/account/resources/certificates/list>, click
+   **+**, choose **Developer ID Application**, click **Continue**, keep the
+   **G2 Sub-CA** profile, upload the file from step 2, click **Continue**, then
+   **Download**. Double-click the downloaded `.cer` file to add it to Keychain
+   Access.
+4. **Export it with its private key.** In Keychain Access select the **login**
+   keychain and the **My Certificates** tab, right-click
+   **Developer ID Application: <your name> (<team id>)** and choose
+   **Export...**. Save as `Certificates.p12` on the Desktop and choose a
+   password (this is `APPLE_CERTIFICATE_PASSWORD`).
+5. **Copy the certificate as text.** In Terminal run
+   `base64 -i ~/Desktop/Certificates.p12 | pbcopy`. The clipboard now holds
+   `APPLE_CERTIFICATE`.
+6. **Make an app-specific password** for notarization: at
+   <https://account.apple.com> go to **Sign-In and Security > App-Specific
+   Passwords**, click **+**, name it "sip-softphone" and copy the password
+   (this is `APPLE_PASSWORD`).
+7. **Find your Team ID** at <https://developer.apple.com/account> under
+   **Membership details** (ten letters and digits; this is `APPLE_TEAM_ID`).
+8. **Add the secrets.** On GitHub open this repository's **Settings > Secrets
+   and variables > Actions** and click **New repository secret** for each:
+
+   | Name | Value |
+   | --- | --- |
+   | `APPLE_CERTIFICATE` | the text from step 5 |
+   | `APPLE_CERTIFICATE_PASSWORD` | the password from step 4 |
+   | `APPLE_ID` | your Apple Account email |
+   | `APPLE_PASSWORD` | the app-specific password from step 6 |
+   | `APPLE_TEAM_ID` | the Team ID from step 7 |
+
+   `APPLE_SIGNING_IDENTITY` is optional: the full certificate name, only needed
+   if the build picks the wrong one.
+9. Delete `Certificates.p12` and the request file from the Desktop, then push
+   to `main` (or re-run the last build) to publish a notarized release.
+
+The first update after switching to the Developer ID may ask for microphone
+access once more, because macOS ties that permission to the app's signature.
 
 ## Building it yourself
 
