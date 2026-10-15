@@ -776,6 +776,61 @@ async function loadAutostart() {
   $("autostart").checked = await invoke("get_autostart").catch(() => false) === true;
 }
 
+// ---------- updates ----------
+
+const UPDATE_EVERY = 6 * 60 * 60 * 1000;
+let update = null; // { version, notes } when a newer version is out
+let updating = false;
+
+function renderUpdate(text) {
+  $("update-dot").classList.toggle("hidden", !update);
+  $("btn-update-install").classList.toggle("hidden", !update);
+  $("btn-update-install").textContent = update ? `Install ${update.version} and restart` : "Install and restart";
+  if (text) $("update-status").textContent = text;
+}
+
+// quiet: background check, which only speaks up when there's something new.
+async function checkUpdate(quiet) {
+  if (updating) return;
+  const version = await invoke("app_version").catch(() => "");
+  if (!quiet) renderUpdate("Checking…");
+  try {
+    const found = await invoke("update_check");
+    const isNew = found && found.version !== update?.version;
+    update = found || null;
+    if (update) {
+      renderUpdate(`Version ${update.version} is available (you have ${version}).` + (update.notes ? ` ${update.notes}` : ""));
+      if (quiet && isNew) toast(`Version ${update.version} is available. Install it from Settings.`);
+    } else {
+      renderUpdate(`You're on the latest version (${version}).`);
+    }
+  } catch (err) {
+    renderUpdate(`Version ${version}. Couldn't check for updates: ${err}`);
+  }
+}
+
+async function installUpdate() {
+  if (liveCalls().length) return toast("Finish your call first; installing restarts the app.");
+  updating = true;
+  $("btn-update-install").disabled = $("btn-update-check").disabled = true;
+  renderUpdate(`Downloading ${update.version}…`);
+  try {
+    // Restarts into the new version when it works, so this only returns on failure.
+    await invoke("update_install");
+  } catch (err) {
+    renderUpdate(`The update didn't install: ${err}`);
+    toast("The update didn't install. You can download it from the releases page.");
+    invoke("open_releases").catch(() => {});
+  } finally {
+    updating = false;
+    $("btn-update-install").disabled = $("btn-update-check").disabled = false;
+  }
+}
+
+listen("update-progress", (e) => {
+  if (updating) $("update-status").textContent = `Downloading ${update.version}… ${e.payload}%`;
+});
+
 // ---------- click-to-dial links ----------
 
 // "tel:+1 (555) 123-4567" -> "+15551234567"; "sip:1002@pbx" stays a URI;
@@ -965,6 +1020,8 @@ $("btn-unregister").addEventListener("click", async () => {
   setReg("", "Not registered");
   render();
 });
+$("btn-update-check").addEventListener("click", () => checkUpdate(false));
+$("btn-update-install").addEventListener("click", installUpdate);
 $("btn-show-log").addEventListener("click", async () => {
   try {
     await invoke("show_log");
@@ -1023,6 +1080,11 @@ loadAutostart();
 takeDialLink();
 autoRegister();
 render();
+// Not in the browser preview: there's nothing to update there.
+if (tauri) {
+  setTimeout(() => checkUpdate(true), 15000);
+  setInterval(() => checkUpdate(true), UPDATE_EVERY);
+}
 
 // Signs in with the saved password, or opens Settings when there's nothing to use.
 async function autoRegister() {

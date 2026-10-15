@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, UserAttentionType, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_updater::UpdaterExt;
 
 /// Passed by the login item so the phone starts in the tray.
 const MINIMIZED_ARG: &str = "--minimized";
@@ -397,6 +398,91 @@ fn set_audio_devices(capture: Option<i32>, playback: Option<i32>) -> Result<(), 
     sipcore::set_audio_devices(capture, playback).map_err(err)
 }
 
+// ---------- updates ----------
+
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    notes: Option<String>,
+}
+
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Asks the release feed whether there's a newer version.
+#[tauri::command]
+async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(update.map(|u| UpdateInfo { version: u.version, notes: u.body }))
+}
+
+/// Downloads the update, checks its signature, replaces the installed app and
+/// starts the new version. Emits "update-progress" with the percent done.
+#[tauri::command]
+async fn update_install(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("You're already on the latest version.")?;
+    log_line(&format!("downloading update {}", update.version));
+    let mut done = 0usize;
+    let progress = app.clone();
+    let bytes = update
+        .download(
+            move |chunk, total| {
+                done += chunk;
+                if let Some(total) = total.filter(|t| *t > 0) {
+                    let _ = progress.emit("update-progress", (done as u64 * 100 / total).min(100));
+                }
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    // Sign out before the files are swapped; on Windows the installer closes
+    // the app without the usual exit path.
+    sipcore::hangup_all();
+    sipcore::shutdown();
+    if let Err(e) = update.install(bytes) {
+        log_line(&format!("update failed: {e}"));
+        // The phone is stopped, so start it again on the version that's there.
+        app.restart();
+    }
+    log_line("update installed, restarting");
+    app.restart();
+}
+
+/// Opens the latest release's page, for downloading by hand when the in-app
+/// update can't install. Derived from the update feed so it follows RELEASE_REPO.
+#[tauri::command]
+fn open_releases(app: AppHandle) -> Result<(), String> {
+    let feed = app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|u| u["endpoints"][0].as_str())
+        .ok_or("No update feed configured")?;
+    let url = feed.trim_end_matches("/download/latest.json");
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "windows")]
+    let r = std::process::Command::new("explorer").arg(url).spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let r = std::process::Command::new("xdg-open").arg(url).spawn();
+    r.map(|_| ()).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         // Must come first: a second launch (e.g. from a tel: link) hands its
@@ -408,6 +494,7 @@ fn main() {
             MacosLauncher::LaunchAgent,
             Some(vec![MINIMIZED_ARG]),
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             if std::env::args().any(|a| a == MINIMIZED_ARG) {
@@ -420,7 +507,7 @@ fn main() {
             }
             log_line(&format!(
                 "SIP Softphone {} on {} {}",
-                env!("CARGO_PKG_VERSION"),
+                app.package_info().version,
                 std::env::consts::OS,
                 std::env::consts::ARCH
             ));
@@ -498,7 +585,11 @@ fn main() {
             take_dial_link,
             set_hotkeys,
             get_autostart,
-            set_autostart
+            set_autostart,
+            app_version,
+            update_check,
+            update_install,
+            open_releases
         ])
         .build(tauri::generate_context!())
         .expect("failed to build app")

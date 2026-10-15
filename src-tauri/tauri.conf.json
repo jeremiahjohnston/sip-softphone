@@ -27,6 +27,13 @@
       "desktop": {
         "schemes": ["tel", "sip", "sips", "callto"]
       }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkxQTY1RDVCMzNFMjU5M0YKUldRL1dlSXpXMTJta1M3anFjN1ZobzBlQmdEMkxocy85OUwrc1pGZkdiS0hiMWwxUk5iTHM0K0cK",
+      "endpoints": ["https://github.com/jeremiahjohnston/sip-softphone/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   },
   "bundle": {
