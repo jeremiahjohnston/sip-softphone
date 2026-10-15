@@ -157,6 +157,25 @@ static void on_call_transfer_status(pjsua_call_id call_id, int st_code,
     }
 }
 
+/* Voicemail message-waiting NOTIFY, subscribed or unsolicited. The body is
+ * parsed on the Rust side. */
+static void on_mwi_info(pjsua_acc_id acc_id, pjsua_mwi_info *mwi_info)
+{
+    char body[1024];
+    pjsip_msg_body *b;
+    int len;
+    PJ_UNUSED_ARG(acc_id);
+    if (!mwi_info->rdata || !mwi_info->rdata->msg_info.msg)
+        return;
+    b = mwi_info->rdata->msg_info.msg->body;
+    if (!b || !b->data || b->len == 0)
+        return;
+    len = b->len < sizeof(body) - 1 ? (int)b->len : (int)sizeof(body) - 1;
+    memcpy(body, b->data, len);
+    body[len] = '\0';
+    emit(SP_EV_MWI, -1, 0, body, NULL);
+}
+
 int sp_init(sp_event_cb cb, void *user, int log_level)
 {
     pjsua_config cfg;
@@ -180,6 +199,8 @@ int sp_init(sp_event_cb cb, void *user, int log_level)
     cfg.cb.on_call_state = &on_call_state;
     cfg.cb.on_call_media_state = &on_call_media_state;
     cfg.cb.on_call_transfer_status = &on_call_transfer_status;
+    cfg.cb.on_mwi_info = &on_mwi_info;
+    cfg.enable_unsolicited_mwi = PJ_TRUE;
     cfg.user_agent = pj_str("SIP Softphone");
 
     pjsua_logging_config_default(&log_cfg);
@@ -285,6 +306,8 @@ int sp_set_account(const char *server, int port, const char *transport,
     acc.cred_info[0].username = pj_str((char *)(auth_user && *auth_user ? auth_user : user));
     acc.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
     acc.cred_info[0].data = pj_str((char *)password);
+    /* Ask the PBX for voicemail counts (SUBSCRIBE to message-summary). */
+    acc.mwi_enabled = PJ_TRUE;
 
     /* pjsua copies the config, so the stack buffers above are fine. */
     status = pjsua_acc_add(&acc, PJ_TRUE, &g_acc);

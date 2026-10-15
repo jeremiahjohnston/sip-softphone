@@ -52,6 +52,10 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
 button:disabled { opacity: .4; cursor: default; }
 button.icon { padding: 6px; border-radius: 8px; display: flex; color: var(--muted); }
 button.icon:hover { background: var(--key); color: var(--text); }
+.head-actions { display: flex; align-items: center; gap: 2px; }
+button.icon.vm { position: relative; }
+button.icon.vm.waiting { color: var(--accent); }
+button.icon.vm .badge { top: -2px; left: auto; right: -4px; }
 button.link { color: var(--accent); font-weight: 600; padding: 4px; }
 
 /* Keypad */

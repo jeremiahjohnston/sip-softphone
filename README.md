@@ -15,6 +15,7 @@ Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 - Recents (call history with missed-call badge) and contacts
 - Seven ringtones on the selected speaker; the window comes forward on incoming calls
 - Tray / menu bar icon with a missed-call dot; closing the window keeps the phone running
+- Voicemail indicator: a badge with the new-message count from the PBX (SIP MWI); click it, or "Call voicemail" in the tray, to dial voicemail (*97 unless you set another number)
 - Microphone and speaker selection
 
 ## Layout

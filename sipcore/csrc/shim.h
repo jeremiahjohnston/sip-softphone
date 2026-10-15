@@ -15,7 +15,8 @@ enum sp_event_type {
     SP_EV_CALL_STATE = 3, /* call_id, code = SIP status, text = state name */
     SP_EV_MEDIA = 4,      /* call_id, code = 1 when audio is flowing */
     SP_EV_LOG = 5,        /* text = log line */
-    SP_EV_TRANSFER = 6    /* call_id, code = SIP status of the transfer, text = reason, remote = "final" when done */
+    SP_EV_TRANSFER = 6,   /* call_id, code = SIP status of the transfer, text = reason, remote = "final" when done */
+    SP_EV_MWI = 7         /* text = message-summary body (RFC 3842) from the voicemail server */
 };
 
 typedef struct sp_event {

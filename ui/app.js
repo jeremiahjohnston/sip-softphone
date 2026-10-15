@@ -35,6 +35,8 @@ let focusId = null;
 let tab = "dial";
 let settingsOpen = false;
 let ticker = null;
+// Latest message-waiting status from the PBX: { waiting, new, old, account }.
+let voicemail = { waiting: false, new: 0, old: 0, account: "" };
 
 // ---------- storage ----------
 
@@ -149,19 +151,50 @@ function render() {
   const missed = load(STORE.missed, 0);
   $("missed-badge").textContent = missed;
   $("missed-badge").classList.toggle("hidden", !missed);
+  renderVoicemail();
   syncTray(missed);
   if (view === "call") renderCalls();
   if (view === "recents") renderRecents();
   if (view === "contacts") renderContacts();
 }
 
-// Mirror the missed-call count and registration status on the tray icon.
+// Mirror the missed-call count, voicemail and registration status on the tray icon.
 function syncTray(missed) {
   const status = $("reg-text").textContent;
-  const key = missed + "|" + status;
+  const key = [missed, status, voicemail.new, voicemail.waiting].join("|");
   if (syncTray.last === key) return;
   syncTray.last = key;
-  invoke("set_tray_state", { missed, status }).catch(() => {});
+  invoke("set_tray_state", {
+    missed, status, voicemail: voicemail.new, voicemailWaiting: voicemail.waiting,
+  }).catch(() => {});
+}
+
+// ---------- voicemail ----------
+
+function renderVoicemail() {
+  const b = $("btn-vm");
+  const n = voicemail.new;
+  b.classList.toggle("waiting", voicemail.waiting);
+  $("vm-badge").textContent = n > 99 ? "99+" : n || "";
+  $("vm-badge").classList.toggle("hidden", !voicemail.waiting);
+  const saved = voicemail.old ? `, ${voicemail.old} saved` : "";
+  b.title = voicemail.waiting
+    ? `${n ? n + " new voicemail" + (n === 1 ? "" : "s") : "New voicemail"}${saved}. Click to listen.`
+    : `No new voicemail${saved}. Click to call voicemail.`;
+}
+
+// The number to dial for voicemail: the setting, else the mailbox the PBX
+// reported, else FreePBX's default *97.
+function voicemailNumber() {
+  const set = (load(STORE.account, {}).voicemail || "").trim();
+  if (set) return set;
+  const fromPbx = voicemail.account && parseRemote(voicemail.account).number;
+  return /^[0-9*#+]+$/.test(fromPbx || "") ? fromPbx : "*97";
+}
+
+function callVoicemail() {
+  settingsOpen = false;
+  dial(voicemailNumber());
 }
 
 function setTab(t) {
@@ -487,7 +520,7 @@ function setReg(kind, text) {
 function fillForm() {
   const acc = load(STORE.account, {});
   const f = $("acct-form");
-  for (const k of ["server", "port", "transport", "user", "auth_user", "display_name"]) {
+  for (const k of ["server", "port", "transport", "user", "auth_user", "display_name", "voicemail"]) {
     if (acc[k] != null) f.elements[k].value = acc[k];
   }
   if (acc.user && acc.server) $("acct-name").textContent = `${acc.user}@${acc.server}`;
@@ -506,7 +539,7 @@ async function register(e) {
     display_name: data.display_name.trim() || null,
   };
   const { password, ...kept } = account;
-  save(STORE.account, kept);
+  save(STORE.account, { ...kept, voicemail: data.voicemail.trim() });
   $("acct-name").textContent = `${account.user}@${account.server}`;
   setReg("pending", "Registering…");
   try {
@@ -609,6 +642,13 @@ function onSip(ev) {
       }
       break;
     }
+    case "voicemail": {
+      const before = voicemail.new;
+      voicemail = { waiting: ev.waiting, new: ev.new, old: ev.old, account: ev.account };
+      if (ev.new > before) toast(ev.new === 1 ? "You have a new voicemail." : `You have ${ev.new} new voicemails.`);
+      render();
+      break;
+    }
     case "transfer":
       if (ev.done) toast(ev.code >= 200 && ev.code < 300 ? "Transferred." : `Transfer failed (${ev.code} ${ev.reason}).`);
       break;
@@ -672,9 +712,16 @@ $("btn-settings").addEventListener("click", () => {
   render();
 });
 $("acct-form").addEventListener("submit", register);
+$("btn-vm").addEventListener("click", callVoicemail);
+// Saved as you type so it works without registering again.
+$("acct-form").elements.voicemail.addEventListener("change", (e) => {
+  save(STORE.account, { ...load(STORE.account, {}), voicemail: e.target.value.trim() });
+});
 $("btn-unregister").addEventListener("click", async () => {
   try { await invoke("sip_unregister"); } catch {}
+  voicemail = { waiting: false, new: 0, old: 0, account: "" };
   setReg("", "Not registered");
+  render();
 });
 $("btn-show-log").addEventListener("click", async () => {
   try {
@@ -722,6 +769,7 @@ fillForm();
 refreshContactList();
 listen("sip", (e) => onSip(e.payload));
 listen("show-recents", () => setTab("recents"));
+listen("call-voicemail", () => callVoicemail());
 applyAudio();
 if (!load(STORE.account, {}).server) settingsOpen = true;
 render();
@@ -730,7 +778,10 @@ render();
 
 function mockInvoke(cmd, args) {
   console.log("invoke", cmd, args);
-  if (cmd === "sip_register") setTimeout(() => onSip({ type: "registration", registered: true, code: 200, reason: "OK" }), 400);
+  if (cmd === "sip_register") {
+    setTimeout(() => onSip({ type: "registration", registered: true, code: 200, reason: "OK" }), 400);
+    setTimeout(() => onSip({ type: "voicemail", waiting: true, new: 2, old: 5, account: "sip:*97@pbx" }), 900);
+  }
   if (cmd === "sip_call") return Promise.resolve((mockInvoke.n = (mockInvoke.n || 0) + 1));
   if (cmd === "ringtones") return Promise.resolve(["Chirp", "Classic", "British", "Digital", "Chime", "Soft", "Office"]);
   if (cmd === "audio_devices")

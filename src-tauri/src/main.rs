@@ -152,8 +152,10 @@ fn ringtones() -> Vec<&'static str> {
 
 // ---------- tray / menu bar icon ----------
 
-/// The tray menu's "missed calls" line, kept so its text can be updated.
+/// The tray menu's "missed calls" and "voicemail" lines, kept so their text
+/// can be updated.
 static MISSED_ITEM: OnceLock<MenuItem<tauri::Wry>> = OnceLock::new();
+static VOICEMAIL_ITEM: OnceLock<MenuItem<tauri::Wry>> = OnceLock::new();
 
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -166,9 +168,14 @@ fn show_main(app: &AppHandle) {
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open SIP Softphone", true, None::<&str>)?;
     let missed = MenuItem::with_id(app, "missed", "No missed calls", false, None::<&str>)?;
+    let voicemail = MenuItem::with_id(app, "voicemail", "Call voicemail", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &missed, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&open, &missed, &voicemail, &PredefinedMenuItem::separator(app)?, &quit],
+    )?;
     let _ = MISSED_ITEM.set(missed);
+    let _ = VOICEMAIL_ITEM.set(voicemail);
 
     TrayIconBuilder::with_id("main")
         .icon(Image::from_bytes(TRAY_ICON)?)
@@ -180,6 +187,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "missed" => {
                 show_main(app);
                 let _ = app.emit("show-recents", ());
+            }
+            "voicemail" => {
+                show_main(app);
+                let _ = app.emit("call-voicemail", ());
             }
             "quit" => app.exit(0),
             _ => {}
@@ -198,11 +209,21 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Called by the UI whenever the missed-call count or registration changes.
+/// Called by the UI whenever the missed-call count, voicemail count or
+/// registration changes. `voicemail` is the number of new messages; `Some(0)`
+/// with `voicemail_waiting` means the PBX says "yes" without a count.
 #[tauri::command]
-fn set_tray_state(app: AppHandle, missed: u32, status: String) -> Result<(), String> {
+fn set_tray_state(
+    app: AppHandle,
+    missed: u32,
+    status: String,
+    voicemail: Option<u32>,
+    voicemail_waiting: Option<bool>,
+) -> Result<(), String> {
     let tray = app.tray_by_id("main").ok_or("no tray")?;
-    let icon = if missed > 0 { TRAY_ICON_MISSED } else { TRAY_ICON };
+    let vm = voicemail.unwrap_or(0);
+    let vm_waiting = voicemail_waiting.unwrap_or(vm > 0);
+    let icon = if missed > 0 || vm_waiting { TRAY_ICON_MISSED } else { TRAY_ICON };
     tray.set_icon(Some(Image::from_bytes(icon).map_err(|e| e.to_string())?))
         .map_err(|e| e.to_string())?;
     let line = match missed {
@@ -210,10 +231,21 @@ fn set_tray_state(app: AppHandle, missed: u32, status: String) -> Result<(), Str
         1 => "1 missed call".to_string(),
         n => format!("{n} missed calls"),
     };
-    let _ = tray.set_tooltip(Some(format!("SIP Softphone: {status}. {line}")));
+    let vm_line = match (vm, vm_waiting) {
+        (0, false) => "No new voicemail".to_string(),
+        (0, true) => "New voicemail".to_string(),
+        (1, _) => "1 new voicemail".to_string(),
+        (n, _) => format!("{n} new voicemails"),
+    };
+    let _ = tray.set_tooltip(Some(format!("SIP Softphone: {status}. {line}. {vm_line}")));
     if let Some(item) = MISSED_ITEM.get() {
         let _ = item.set_text(&line);
         let _ = item.set_enabled(missed > 0);
+    }
+    if let Some(item) = VOICEMAIL_ITEM.get() {
+        // Always clickable: it dials the voicemail number.
+        let _ = item.set_text(if vm_waiting { format!("{vm_line}: listen") } else { "Call voicemail".to_string() });
+        let _ = item.set_enabled(true);
     }
     Ok(())
 }
