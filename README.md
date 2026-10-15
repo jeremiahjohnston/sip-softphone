@@ -117,3 +117,10 @@ See the top of `sipcore/examples/smoke.rs` for the other options.
 - Use a **PJSIP** extension (Chan SIP also works). UDP on port 5060 is the usual default.
 - If you can call out but hear nothing, or calls drop after ~30 seconds, it's
   usually NAT or firewall on the RTP ports (10000-20000 on Asterisk by default).
+
+## License
+
+The code in this repository is under the [MIT License](LICENSE). The app links
+[PJSIP](https://www.pjsip.org), which is licensed under the GNU GPL v2, so the
+built installers as a whole are distributed under the GPL v2; the full source
+for them is this repository plus PJSIP's.

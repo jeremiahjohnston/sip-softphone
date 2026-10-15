@@ -3,6 +3,7 @@ name = "sip-softphone"
 version = "0.1.0"
 edition = "2021"
 description = "A simple SIP softphone"
+license = "MIT"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
