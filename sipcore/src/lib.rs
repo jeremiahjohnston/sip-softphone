@@ -53,6 +53,10 @@ extern "C" {
     fn sp_ring(mode: c_int, tone: c_int) -> c_int;
     fn sp_ringtone_count() -> c_int;
     fn sp_use_null_audio() -> c_int;
+    fn sp_set_dnd(on: c_int);
+    fn sp_set_forward(dest: *const c_char);
+    fn sp_watch(number: *const c_char) -> c_int;
+    fn sp_unwatch_all();
     fn sp_shutdown();
 }
 
@@ -62,12 +66,65 @@ extern "C" {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SipEvent {
     Registration { registered: bool, code: i32, reason: String },
-    Incoming { call_id: i32, remote: String },
+    /// `auto_answer` is set when the PBX marked it as an intercom/paging call.
+    Incoming { call_id: i32, remote: String, auto_answer: bool },
+    /// A call turned away without ringing: `reason` is "dnd" or "forwarded".
+    Rejected { remote: String, code: i32, reason: String },
+    /// BLF state of a watched extension: "idle", "ringing", "busy" or "unknown".
+    Presence { number: String, state: String },
     CallState { call_id: i32, state: String, code: i32, remote: String },
     Media { call_id: i32, active: bool, status: String },
     Log { level: i32, line: String },
     /// Progress of a transfer we started on `call_id`.
     Transfer { call_id: i32, code: i32, reason: String, done: bool },
+    /// Voicemail status from the PBX (message-waiting indicator).
+    Voicemail(Voicemail),
+}
+
+/// Parsed RFC 3842 message-summary body.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Voicemail {
+    pub waiting: bool,
+    /// New (unheard) voice messages.
+    pub new: u32,
+    /// Saved (heard) voice messages.
+    pub old: u32,
+    /// The mailbox URI from `Message-Account`, if the PBX sent one.
+    pub account: String,
+}
+
+impl Voicemail {
+    /// Parses a message-summary body such as:
+    ///
+    /// ```text
+    /// Messages-Waiting: yes
+    /// Message-Account: sip:*97@pbx
+    /// Voice-Message: 2/8 (0/2)
+    /// ```
+    pub fn parse(body: &str) -> Voicemail {
+        let mut vm = Voicemail::default();
+        for line in body.lines() {
+            let Some((key, value)) = line.split_once(':') else { continue };
+            let value = value.trim();
+            match key.trim().to_ascii_lowercase().as_str() {
+                "messages-waiting" => vm.waiting = value.eq_ignore_ascii_case("yes"),
+                "message-account" => vm.account = value.to_string(),
+                "voice-message" => {
+                    // "new/old" optionally followed by "(urgent-new/urgent-old)".
+                    let counts = value.split_whitespace().next().unwrap_or("");
+                    let (new, old) = counts.split_once('/').unwrap_or((counts, "0"));
+                    vm.new = new.trim().parse().unwrap_or(0);
+                    vm.old = old.trim().parse().unwrap_or(0);
+                }
+                _ => {}
+            }
+        }
+        // Some servers only send the yes/no line.
+        if vm.new > 0 {
+            vm.waiting = true;
+        }
+        vm
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -141,7 +198,11 @@ extern "C" fn trampoline(ev: *const RawEvent, _user: *mut c_void) {
             code: ev.code,
             reason: cstr(ev.text),
         },
-        2 => SipEvent::Incoming { call_id: ev.call_id, remote: cstr(ev.remote) },
+        2 => SipEvent::Incoming {
+            call_id: ev.call_id,
+            remote: cstr(ev.remote),
+            auto_answer: cstr(ev.text) == "intercom",
+        },
         3 => SipEvent::CallState {
             call_id: ev.call_id,
             state: cstr(ev.text),
@@ -156,6 +217,9 @@ extern "C" fn trampoline(ev: *const RawEvent, _user: *mut c_void) {
             reason: cstr(ev.text),
             done: cstr(ev.remote) == "final",
         },
+        7 => SipEvent::Voicemail(Voicemail::parse(&cstr(ev.text))),
+        8 => SipEvent::Presence { number: cstr(ev.remote), state: cstr(ev.text) },
+        9 => SipEvent::Rejected { remote: cstr(ev.remote), code: ev.code, reason: cstr(ev.text) },
         _ => return,
     };
     // Never let a panic unwind into C.
@@ -331,6 +395,29 @@ pub fn ringtone_count() -> usize {
     unsafe { sp_ringtone_count() as usize }
 }
 
+/// Do Not Disturb: new incoming calls get 486 Busy Here and never ring.
+pub fn set_dnd(on: bool) {
+    unsafe { sp_set_dnd(on as c_int) }
+}
+
+/// Forwards every incoming call to `dest` with a 302 redirect. `None` or an
+/// empty string turns forwarding off. Set it after the account is added.
+pub fn set_forward(dest: Option<&str>) {
+    let d = c(dest.unwrap_or("").trim());
+    unsafe { sp_set_forward(d.as_ptr()) }
+}
+
+/// Replaces the set of extensions watched for BLF. Results arrive as
+/// [`SipEvent::Presence`]. Needs a registered account.
+pub fn watch(numbers: &[String]) -> Result<(), Error> {
+    unsafe { sp_unwatch_all() };
+    for n in numbers {
+        let n = c(n.trim());
+        check(unsafe { sp_watch(n.as_ptr()) }, "watch")?;
+    }
+    Ok(())
+}
+
 /// Runs without a sound device. Meant for headless tests.
 pub fn use_null_audio() -> Result<(), Error> {
     check(unsafe { sp_use_null_audio() }, "null audio")
@@ -338,4 +425,34 @@ pub fn use_null_audio() -> Result<(), Error> {
 
 pub fn shutdown() {
     unsafe { sp_shutdown() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Voicemail;
+
+    #[test]
+    fn parses_asterisk_summary() {
+        let vm = Voicemail::parse(
+            "Messages-Waiting: yes\r\nMessage-Account: sip:*97@pbx.lan\r\nVoice-Message: 2/8 (0/2)\r\n",
+        );
+        assert_eq!(
+            vm,
+            Voicemail { waiting: true, new: 2, old: 8, account: "sip:*97@pbx.lan".into() }
+        );
+    }
+
+    #[test]
+    fn parses_empty_mailbox() {
+        let vm = Voicemail::parse("Messages-Waiting: no\r\nVoice-Message: 0/3\r\n");
+        assert!(!vm.waiting);
+        assert_eq!((vm.new, vm.old), (0, 3));
+    }
+
+    #[test]
+    fn yes_without_counts() {
+        let vm = Voicemail::parse("Messages-Waiting: yes\n");
+        assert!(vm.waiting);
+        assert_eq!(vm.new, 0);
+    }
 }

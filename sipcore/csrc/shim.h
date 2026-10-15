@@ -11,11 +11,14 @@ extern "C" {
 
 enum sp_event_type {
     SP_EV_REG = 1,        /* code = SIP status, text = reason, call_id = 1 if registered */
-    SP_EV_INCOMING = 2,   /* call_id, remote = caller URI */
+    SP_EV_INCOMING = 2,   /* call_id, remote = caller URI, text = "intercom" if the PBX asked to auto-answer */
     SP_EV_CALL_STATE = 3, /* call_id, code = SIP status, text = state name */
     SP_EV_MEDIA = 4,      /* call_id, code = 1 when audio is flowing */
     SP_EV_LOG = 5,        /* text = log line */
-    SP_EV_TRANSFER = 6    /* call_id, code = SIP status of the transfer, text = reason, remote = "final" when done */
+    SP_EV_TRANSFER = 6,   /* call_id, code = SIP status of the transfer, text = reason, remote = "final" when done */
+    SP_EV_MWI = 7,        /* text = message-summary body (RFC 3842) from the voicemail server */
+    SP_EV_PRESENCE = 8,   /* remote = watched number, text = "idle", "ringing", "busy" or "unknown" */
+    SP_EV_REJECTED = 9    /* remote = caller URI, code = SIP status sent, text = "dnd" or "forwarded" */
 };
 
 typedef struct sp_event {
@@ -43,6 +46,15 @@ void sp_hangup_all(void);
 int  sp_send_dtmf(int call_id, const char *digits);
 int  sp_set_mute(int call_id, int mute);
 int  sp_set_hold(int call_id, int hold);
+/* Do Not Disturb: reject new incoming calls with 486 Busy Here. */
+void sp_set_dnd(int on);
+/* Forward every incoming call (302 redirect) to dest; NULL or "" turns it off. */
+void sp_set_forward(const char *dest);
+/* BLF: watch an extension's call state (SUBSCRIBE to the dialog event
+ * package). Results arrive as SP_EV_PRESENCE. Returns 0 on success. */
+int  sp_watch(const char *number);
+/* Stops watching everything. */
+void sp_unwatch_all(void);
 /* Blind transfer to dest (same forms as sp_make_call). */
 int  sp_transfer(int call_id, const char *dest);
 /* Attended transfer: connect call_id's party to the party on dest_call_id. */

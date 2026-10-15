@@ -22,6 +22,13 @@
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["tel", "sip", "sips", "callto"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

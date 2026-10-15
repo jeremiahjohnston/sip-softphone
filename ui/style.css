@@ -52,6 +52,20 @@ button { font: inherit; color: inherit; border: 0; cursor: pointer; background: 
 button:disabled { opacity: .4; cursor: default; }
 button.icon { padding: 6px; border-radius: 8px; display: flex; color: var(--muted); }
 button.icon:hover { background: var(--key); color: var(--text); }
+.head-actions { display: flex; align-items: center; gap: 2px; }
+button.icon.vm { position: relative; }
+button.icon.vm.waiting { color: var(--accent); }
+button.icon.vm .badge { top: -2px; left: auto; right: -4px; }
+button.icon.dnd.on { color: var(--red); }
+.list .avatar[data-blf] { position: relative; }
+.list .avatar[data-blf]::after {
+  content: ""; position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px;
+  border-radius: 50%; border: 2px solid var(--bg); background: var(--muted);
+}
+.list .avatar[data-blf="idle"]::after { background: var(--green); }
+.list .avatar[data-blf="ringing"]::after { background: var(--amber); animation: blink 0.8s steps(2) infinite; }
+.list .avatar[data-blf="busy"]::after { background: var(--red); }
+@keyframes blink { 50% { opacity: 0.2; } }
 button.link { color: var(--accent); font-weight: 600; padding: 4px; }
 
 /* Keypad */

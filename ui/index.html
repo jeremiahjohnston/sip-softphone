@@ -23,6 +23,8 @@
     <symbol id="i-in" viewBox="0 0 24 24"><path d="M20 5.4 18.6 4 7 15.6V9H5v10h10v-2H8.4z"/></symbol>
     <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 5v2h6.6L4 18.6 5.4 20 17 8.4V15h2V5z"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM19 4h-3.5l-1-1h-5l-1 1H5v2h14z"/></symbol>
+    <symbol id="i-vm" viewBox="0 0 24 24"><path d="M18.5 6.5a5.5 5.5 0 0 0-4.2 9H9.7a5.5 5.5 0 1 0-4.2 2h13a5.5 5.5 0 0 0 0-11zm-13 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zm13 0a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12.3 2a10 10 0 1 0 9.7 12.4A8 8 0 0 1 12.3 2z"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></symbol>
   </svg>
 
@@ -34,7 +36,11 @@
         <div id="reg-text" class="sub">Not registered</div>
       </div>
     </div>
-    <button id="btn-settings" class="icon" title="Settings"><svg><use href="#i-gear"/></svg></button>
+    <div class="head-actions">
+      <button id="btn-dnd" class="icon dnd" title="Do Not Disturb is off"><svg><use href="#i-moon"/></svg></button>
+      <button id="btn-vm" class="icon vm" title="Call voicemail"><svg><use href="#i-vm"/></svg><i id="vm-badge" class="badge hidden"></i></button>
+      <button id="btn-settings" class="icon" title="Settings"><svg><use href="#i-gear"/></svg></button>
+    </div>
   </header>
 
   <main>
@@ -127,9 +133,11 @@
         </div>
         <label>Extension<input name="user" required placeholder="1001" /></label>
         <label>Password<input name="password" type="password" required autocomplete="off" /></label>
+        <label class="check"><input type="checkbox" id="remember-pw" checked /> Remember password and sign in when the app opens</label>
         <label>Auth ID (optional)<input name="auth_user" placeholder="same as extension" /></label>
         <label>Display name (optional)<input name="display_name" /></label>
-        <p class="hint">Settings except the password are saved on this computer. You'll re-enter the password each launch for now.</p>
+        <label>Voicemail number<input name="voicemail" placeholder="*97" /></label>
+        <p class="hint">The password is kept in your system's keychain (Keychain on Mac, Credential Manager on Windows, the keyring on Linux), never in a plain file.</p>
         <div class="row-end">
           <button type="button" id="btn-unregister" class="ghost">Sign out</button>
           <button type="submit" class="primary">Register</button>
@@ -145,6 +153,29 @@
           <button type="button" id="btn-preview" class="ghost" title="Play once">Play</button>
         </div>
         <p class="hint">Changes apply right away, even during a call. Plugged in a headset? Reopen this screen to see it. Closing the window keeps the phone running in the tray / menu bar; quit from there.</p>
+      </div>
+      <h2>Calls</h2>
+      <div class="audio">
+        <label>Auto-answer
+          <select id="auto-answer">
+            <option value="off">Off</option>
+            <option value="intercom">Intercom and paging calls</option>
+            <option value="all">All calls</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="fwd-on" /> Forward all calls</label>
+        <label>Forward to<input id="fwd-to" placeholder="Number or extension" autocomplete="off" list="contact-list" /></label>
+        <label class="check"><input type="checkbox" id="blf-on" checked /> Show whether contacts' extensions are free, ringing or busy</label>
+        <p class="hint">Intercom calls are ones your PBX marks for auto-answer, like FreePBX's *80. Forwarding sends callers on to the other number without ringing here. Extension status lights appear on contacts whose number is an extension (2 to 6 digits).</p>
+      </div>
+      <h2>Shortcuts and startup</h2>
+      <div class="audio">
+        <label class="check"><input type="checkbox" id="autostart" /> Open at login (starts in the tray / menu bar)</label>
+        <label class="check"><input type="checkbox" id="hotkeys-on" /> Global hotkeys, even when the app is in the background</label>
+        <label>Answer<input id="hk-answer" autocomplete="off" /></label>
+        <label>Hang up / decline<input id="hk-hangup" autocomplete="off" /></label>
+        <label>Mute<input id="hk-mute" autocomplete="off" /></label>
+        <p class="hint">Write keys like CommandOrControl+Alt+Shift+A (Command on Mac, Ctrl elsewhere). Links like tel:5551234 and sip:1002@pbx open here and dial.</p>
       </div>
       <h2>Troubleshooting</h2>
       <p class="hint">The app keeps a log of the current session. If something goes wrong, make a short call, then click below and drag the sip.log file into a message.</p>

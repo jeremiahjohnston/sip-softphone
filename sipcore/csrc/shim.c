@@ -25,6 +25,12 @@ static unsigned g_clock_rate;
 static pj_pool_t *g_pool;
 static pjmedia_port *g_ring_port;
 static pjsua_conf_port_id g_ring_slot = PJSUA_INVALID_ID;
+static volatile int g_dnd;
+static char g_forward[512]; /* full URI, empty when off */
+/* The number each BLF buddy watches, indexed by buddy id. */
+static char g_watch[PJSUA_MAX_BUDDIES][64];
+
+static void build_uri(const char *dest, char *uri, size_t len);
 
 static void emit(int type, int call_id, int code, const char *text, const char *remote)
 {
@@ -94,19 +100,102 @@ static const char *state_name(pjsip_inv_state s)
     }
 }
 
+/* True when the INVITE asks to be auto-answered: intercom/paging calls carry
+ * "Call-Info: ...;answer-after=0" or an Alert-Info naming auto-answer. */
+static pj_bool_t wants_auto_answer(pjsip_rx_data *rdata)
+{
+    pjsip_msg *msg = rdata ? rdata->msg_info.msg : NULL;
+    pjsip_hdr *h;
+    char buf[512];
+    int len, i;
+    if (!msg)
+        return PJ_FALSE;
+    for (h = msg->hdr.next; h != &msg->hdr; h = h->next) {
+        pj_bool_t call_info = pj_stricmp2(&h->name, "Call-Info") == 0;
+        if (!call_info && pj_stricmp2(&h->name, "Alert-Info") != 0)
+            continue;
+        len = pjsip_hdr_print_on(h, buf, sizeof(buf) - 1);
+        if (len <= 0)
+            continue;
+        buf[len] = '\0';
+        for (i = 0; i < len; i++)
+            buf[i] = (char)pj_tolower(buf[i]);
+        if (call_info && strstr(buf, "answer-after"))
+            return PJ_TRUE;
+        if (!call_info && (strstr(buf, "auto") || strstr(buf, "intercom") ||
+                           strstr(buf, "ring answer")))
+            return PJ_TRUE;
+    }
+    return PJ_FALSE;
+}
+
+/* Sends a 302 to the forwarding target. */
+static void redirect_call(pjsua_call_id call_id)
+{
+    pjsua_msg_data md;
+    pj_str_t name = pj_str("Contact");
+    char value[600];
+    pj_str_t v;
+    pj_pool_t *pool = pjsua_pool_create("fwd", 512, 512);
+    if (!pool) {
+        pjsua_call_hangup(call_id, 486, NULL, NULL);
+        return;
+    }
+    snprintf(value, sizeof(value), "<%s>", g_forward);
+    v = pj_str(value);
+    pjsua_msg_data_init(&md);
+    pj_list_push_back(&md.hdr_list,
+                      pjsip_generic_string_hdr_create(pool, &name, &v));
+    pjsua_call_hangup(call_id, 302, NULL, &md);
+    pj_pool_release(pool);
+}
+
 static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
                              pjsip_rx_data *rdata)
 {
     pjsua_call_info ci;
     char remote[256];
     PJ_UNUSED_ARG(acc_id);
-    PJ_UNUSED_ARG(rdata);
     g_muted[call_id] = PJ_FALSE;
     pjsua_call_get_info(call_id, &ci);
     snprintf(remote, sizeof(remote), "%.*s",
              (int)ci.remote_info.slen, ci.remote_info.ptr);
+    if (g_forward[0]) {
+        redirect_call(call_id);
+        emit(SP_EV_REJECTED, call_id, 302, "forwarded", remote);
+        return;
+    }
+    if (g_dnd) {
+        pjsua_call_hangup(call_id, 486, NULL, NULL);
+        emit(SP_EV_REJECTED, call_id, 486, "dnd", remote);
+        return;
+    }
     pjsua_call_answer(call_id, 180, NULL, NULL);
-    emit(SP_EV_INCOMING, call_id, 180, "incoming", remote);
+    emit(SP_EV_INCOMING, call_id, 180,
+         wants_auto_answer(rdata) ? "intercom" : "incoming", remote);
+}
+
+/* BLF: map the dialog-info for a watched extension to a simple state. */
+static void on_buddy_dlg_event_state(pjsua_buddy_id id)
+{
+    pjsua_buddy_dlg_event_info info;
+    char state[32];
+    const char *out = "idle";
+    if (id < 0 || id >= (int)PJSUA_MAX_BUDDIES || !g_watch[id][0])
+        return;
+    if (pjsua_buddy_get_dlg_event_info(id, &info) != PJ_SUCCESS)
+        return;
+    snprintf(state, sizeof(state), "%.*s",
+             (int)info.dialog_state.slen, info.dialog_state.ptr);
+    if (info.sub_state == PJSIP_EVSUB_STATE_TERMINATED ||
+        info.sub_state == PJSIP_EVSUB_STATE_NULL)
+        out = "unknown";
+    else if (strcmp(state, "early") == 0 || strcmp(state, "proceeding") == 0 ||
+             strcmp(state, "trying") == 0)
+        out = "ringing";
+    else if (strcmp(state, "confirmed") == 0)
+        out = "busy";
+    emit(SP_EV_PRESENCE, id, 0, out, g_watch[id]);
 }
 
 static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
@@ -157,6 +246,25 @@ static void on_call_transfer_status(pjsua_call_id call_id, int st_code,
     }
 }
 
+/* Voicemail message-waiting NOTIFY, subscribed or unsolicited. The body is
+ * parsed on the Rust side. */
+static void on_mwi_info(pjsua_acc_id acc_id, pjsua_mwi_info *mwi_info)
+{
+    char body[1024];
+    pjsip_msg_body *b;
+    int len;
+    PJ_UNUSED_ARG(acc_id);
+    if (!mwi_info->rdata || !mwi_info->rdata->msg_info.msg)
+        return;
+    b = mwi_info->rdata->msg_info.msg->body;
+    if (!b || !b->data || b->len == 0)
+        return;
+    len = b->len < sizeof(body) - 1 ? (int)b->len : (int)sizeof(body) - 1;
+    memcpy(body, b->data, len);
+    body[len] = '\0';
+    emit(SP_EV_MWI, -1, 0, body, NULL);
+}
+
 int sp_init(sp_event_cb cb, void *user, int log_level)
 {
     pjsua_config cfg;
@@ -180,6 +288,9 @@ int sp_init(sp_event_cb cb, void *user, int log_level)
     cfg.cb.on_call_state = &on_call_state;
     cfg.cb.on_call_media_state = &on_call_media_state;
     cfg.cb.on_call_transfer_status = &on_call_transfer_status;
+    cfg.cb.on_mwi_info = &on_mwi_info;
+    cfg.cb.on_buddy_dlg_event_state = &on_buddy_dlg_event_state;
+    cfg.enable_unsolicited_mwi = PJ_TRUE;
     cfg.user_agent = pj_str("SIP Softphone");
 
     pjsua_logging_config_default(&log_cfg);
@@ -285,6 +396,8 @@ int sp_set_account(const char *server, int port, const char *transport,
     acc.cred_info[0].username = pj_str((char *)(auth_user && *auth_user ? auth_user : user));
     acc.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
     acc.cred_info[0].data = pj_str((char *)password);
+    /* Ask the PBX for voicemail counts (SUBSCRIBE to message-summary). */
+    acc.mwi_enabled = PJ_TRUE;
 
     /* pjsua copies the config, so the stack buffers above are fine. */
     status = pjsua_acc_add(&acc, PJ_TRUE, &g_acc);
@@ -536,6 +649,56 @@ int sp_use_null_audio(void)
         return PJ_EINVALIDOP;
     ensure_thread();
     return pjsua_set_null_snd_dev();
+}
+
+void sp_set_dnd(int on)
+{
+    g_dnd = on ? 1 : 0;
+}
+
+void sp_set_forward(const char *dest)
+{
+    if (!dest || !*dest || !g_started) {
+        g_forward[0] = '\0';
+        return;
+    }
+    build_uri(dest, g_forward, sizeof(g_forward));
+}
+
+int sp_watch(const char *number)
+{
+    pjsua_buddy_config cfg;
+    pjsua_buddy_id id;
+    char uri[512];
+    pj_status_t status;
+    if (!g_started || g_acc == PJSUA_INVALID_ID || !number || !*number)
+        return PJ_EINVALIDOP;
+    ensure_thread();
+    build_uri(number, uri, sizeof(uri));
+    pjsua_buddy_config_default(&cfg);
+    cfg.uri = pj_str(uri);
+    cfg.subscribe = PJ_FALSE;
+    cfg.subscribe_dlg_event = PJ_TRUE;
+    status = pjsua_buddy_add(&cfg, &id);
+    if (status != PJ_SUCCESS)
+        return status;
+    snprintf(g_watch[id], sizeof(g_watch[id]), "%s", number);
+    return 0;
+}
+
+void sp_unwatch_all(void)
+{
+    pjsua_buddy_id ids[PJSUA_MAX_BUDDIES];
+    unsigned i, count = PJ_ARRAY_SIZE(ids);
+    if (!g_started)
+        return;
+    ensure_thread();
+    if (pjsua_enum_buddies(ids, &count) != PJ_SUCCESS)
+        return;
+    for (i = 0; i < count; i++) {
+        g_watch[ids[i]][0] = '\0';
+        pjsua_buddy_del(ids[i]);
+    }
 }
 
 int sp_transfer(int call_id, const char *dest)
