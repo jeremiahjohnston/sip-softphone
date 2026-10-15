@@ -12,3 +12,8 @@ sipcore = { path = "../sipcore" }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }

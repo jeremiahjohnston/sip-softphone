@@ -16,6 +16,12 @@ Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 - Seven ringtones on the selected speaker; the window comes forward on incoming calls
 - Tray / menu bar icon with a missed-call dot; closing the window keeps the phone running
 - Voicemail indicator: a badge with the new-message count from the PBX (SIP MWI); click it, or "Call voicemail" in the tray, to dial voicemail (*97 unless you set another number)
+- Do Not Disturb (header moon or tray menu) and call forwarding; turned-away calls still show in Recents
+- Password saved in the system keychain; signs in automatically at launch
+- Click-to-dial: tel:, sip: and callto: links open the app and dial
+- Auto-answer for intercom/paging calls (or all calls)
+- BLF: contacts that are extensions show free / ringing / busy
+- Optional global hotkeys (answer, hang up, mute) and open at login
 - Microphone and speaker selection
 
 ## Layout
@@ -58,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File scripts\run-windows.ps1
 ### Linux (Debian/Ubuntu)
 
 ```bash
-sudo apt install build-essential git pkg-config libasound2-dev libwebkit2gtk-4.1-dev librsvg2-dev
+sudo apt install build-essential git pkg-config libasound2-dev libwebkit2gtk-4.1-dev librsvg2-dev libdbus-1-dev
 curl https://sh.rustup.rs -sSf | sh    # once
 scripts/build-pjsip-linux.sh           # once
 scripts/run-linux.sh

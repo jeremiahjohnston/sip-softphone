@@ -8,9 +8,17 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use sipcore::{Account, SipEvent, Transport};
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, UserAttentionType, WindowEvent};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt as _};
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+/// Passed by the login item so the phone starts in the tray.
+const MINIMIZED_ARG: &str = "--minimized";
+/// Keychain / Credential Manager / Secret Service entry name.
+const KEYRING_SERVICE: &str = "dev.jeremiah.sipsoftphone";
 
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
 const TRAY_ICON_MISSED: &[u8] = include_bytes!("../icons/tray-missed.png");
@@ -150,12 +158,127 @@ fn ringtones() -> Vec<&'static str> {
     sipcore::RINGTONES.to_vec()
 }
 
+#[tauri::command]
+fn sip_set_dnd(app: AppHandle, on: bool) {
+    sipcore::set_dnd(on);
+    if let Some(item) = DND_ITEM.get() {
+        let _ = item.set_checked(on);
+    }
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_title(if on { Some("DND") } else { None::<&str> });
+    }
+}
+
+#[tauri::command]
+fn sip_set_forward(dest: Option<String>) {
+    sipcore::set_forward(dest.as_deref());
+}
+
+#[tauri::command]
+fn sip_watch(numbers: Vec<String>) -> Result<(), String> {
+    sipcore::watch(&numbers).map_err(err)
+}
+
+// ---------- saved password ----------
+
+fn keyring_entry(account: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYRING_SERVICE, account).map_err(|e| e.to_string())
+}
+
+/// The saved password for `account` ("user@server"), if any.
+#[tauri::command]
+fn password_get(account: String) -> Option<String> {
+    keyring_entry(&account).ok()?.get_password().ok()
+}
+
+#[tauri::command]
+fn password_set(account: String, password: String) -> Result<(), String> {
+    keyring_entry(&account)?.set_password(&password).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn password_delete(account: String) {
+    if let Ok(entry) = keyring_entry(&account) {
+        let _ = entry.delete_credential();
+    }
+}
+
+// ---------- click-to-dial ----------
+
+/// The last tel:/sip:/callto: link opened with the app, waiting for the UI.
+static PENDING_DIAL: Mutex<Option<String>> = Mutex::new(None);
+
+fn on_dial_links(app: &AppHandle, urls: Vec<String>) {
+    let Some(url) = urls.into_iter().find(|u| {
+        let u = u.to_ascii_lowercase();
+        u.starts_with("tel:") || u.starts_with("sip:") || u.starts_with("sips:") || u.starts_with("callto:")
+    }) else {
+        return;
+    };
+    log_line(&format!("open link {url}"));
+    if let Ok(mut p) = PENDING_DIAL.lock() {
+        *p = Some(url);
+    }
+    show_main(app);
+    let _ = app.emit("dial-link", ());
+}
+
+/// Hands the UI the pending link once, so a link that arrives before the
+/// window has loaded still gets dialed.
+#[tauri::command]
+fn take_dial_link() -> Option<String> {
+    PENDING_DIAL.lock().ok()?.take()
+}
+
+// ---------- hotkeys and login item ----------
+
+/// Replaces the global hotkeys. Each entry is (action, accelerator), e.g.
+/// ("answer", "CommandOrControl+Alt+Shift+A"). Pressing one emits "hotkey"
+/// with the action name.
+#[tauri::command]
+fn set_hotkeys(app: AppHandle, keys: Vec<(String, String)>) -> Result<(), String> {
+    let gs = app.global_shortcut();
+    gs.unregister_all().map_err(|e| e.to_string())?;
+    let mut failed = Vec::new();
+    for (action, accel) in keys {
+        if accel.trim().is_empty() {
+            continue;
+        }
+        let r = gs.on_shortcut(accel.trim(), move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                let _ = app.emit("hotkey", action.clone());
+            }
+        });
+        if let Err(e) = r {
+            log_line(&format!("hotkey {accel}: {e}"));
+            failed.push(accel);
+        }
+    }
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join(", "))
+    }
+}
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, on: bool) -> Result<(), String> {
+    let a = app.autolaunch();
+    if on { a.enable() } else { a.disable() }.map_err(|e| e.to_string())
+}
+
 // ---------- tray / menu bar icon ----------
 
 /// The tray menu's "missed calls" and "voicemail" lines, kept so their text
 /// can be updated.
 static MISSED_ITEM: OnceLock<MenuItem<tauri::Wry>> = OnceLock::new();
 static VOICEMAIL_ITEM: OnceLock<MenuItem<tauri::Wry>> = OnceLock::new();
+static DND_ITEM: OnceLock<CheckMenuItem<tauri::Wry>> = OnceLock::new();
 
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -169,11 +292,21 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open SIP Softphone", true, None::<&str>)?;
     let missed = MenuItem::with_id(app, "missed", "No missed calls", false, None::<&str>)?;
     let voicemail = MenuItem::with_id(app, "voicemail", "Call voicemail", true, None::<&str>)?;
+    let dnd = CheckMenuItem::with_id(app, "dnd", "Do Not Disturb", true, false, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&open, &missed, &voicemail, &PredefinedMenuItem::separator(app)?, &quit],
+        &[
+            &open,
+            &missed,
+            &voicemail,
+            &PredefinedMenuItem::separator(app)?,
+            &dnd,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
     )?;
+    let _ = DND_ITEM.set(dnd);
     let _ = MISSED_ITEM.set(missed);
     let _ = VOICEMAIL_ITEM.set(voicemail);
 
@@ -191,6 +324,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "voicemail" => {
                 show_main(app);
                 let _ = app.emit("call-voicemail", ());
+            }
+            // The UI owns the setting; it calls sip_set_dnd back.
+            "dnd" => {
+                let _ = app.emit("toggle-dnd", ());
             }
             "quit" => app.exit(0),
             _ => {}
@@ -262,8 +399,22 @@ fn set_audio_devices(capture: Option<i32>, playback: Option<i32>) -> Result<(), 
 
 fn main() {
     tauri::Builder::default()
+        // Must come first: a second launch (e.g. from a tel: link) hands its
+        // arguments to this one and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| show_main(app)))
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![MINIMIZED_ARG]),
+        ))
         .setup(|app| {
             let handle = app.handle().clone();
+            if std::env::args().any(|a| a == MINIMIZED_ARG) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
             if let Ok(dir) = app.path().app_log_dir() {
                 open_log(dir);
             }
@@ -291,6 +442,19 @@ fn main() {
             )
             .map_err(|e| e.to_string())?;
             build_tray(app.handle())?;
+            // Click-to-dial. AppImage and dev builds aren't registered by an
+            // installer, so register the link types at runtime there.
+            #[cfg(any(windows, target_os = "linux"))]
+            if let Err(e) = app.deep_link().register_all() {
+                log_line(&format!("link registration failed: {e}"));
+            }
+            let link_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                on_dial_links(&link_handle, event.urls().iter().map(|u| u.to_string()).collect());
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                on_dial_links(app.handle(), urls.iter().map(|u| u.to_string()).collect());
+            }
             // Record what audio hardware pjsip sees, for troubleshooting.
             for d in sipcore::audio_devices() {
                 log_line(&format!(
@@ -324,7 +488,17 @@ fn main() {
             set_tray_state,
             show_log,
             audio_devices,
-            set_audio_devices
+            set_audio_devices,
+            sip_set_dnd,
+            sip_set_forward,
+            sip_watch,
+            password_get,
+            password_set,
+            password_delete,
+            take_dial_link,
+            set_hotkeys,
+            get_autostart,
+            set_autostart
         ])
         .build(tauri::generate_context!())
         .expect("failed to build app")

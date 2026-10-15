@@ -53,6 +53,10 @@ extern "C" {
     fn sp_ring(mode: c_int, tone: c_int) -> c_int;
     fn sp_ringtone_count() -> c_int;
     fn sp_use_null_audio() -> c_int;
+    fn sp_set_dnd(on: c_int);
+    fn sp_set_forward(dest: *const c_char);
+    fn sp_watch(number: *const c_char) -> c_int;
+    fn sp_unwatch_all();
     fn sp_shutdown();
 }
 
@@ -62,7 +66,12 @@ extern "C" {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SipEvent {
     Registration { registered: bool, code: i32, reason: String },
-    Incoming { call_id: i32, remote: String },
+    /// `auto_answer` is set when the PBX marked it as an intercom/paging call.
+    Incoming { call_id: i32, remote: String, auto_answer: bool },
+    /// A call turned away without ringing: `reason` is "dnd" or "forwarded".
+    Rejected { remote: String, code: i32, reason: String },
+    /// BLF state of a watched extension: "idle", "ringing", "busy" or "unknown".
+    Presence { number: String, state: String },
     CallState { call_id: i32, state: String, code: i32, remote: String },
     Media { call_id: i32, active: bool, status: String },
     Log { level: i32, line: String },
@@ -189,7 +198,11 @@ extern "C" fn trampoline(ev: *const RawEvent, _user: *mut c_void) {
             code: ev.code,
             reason: cstr(ev.text),
         },
-        2 => SipEvent::Incoming { call_id: ev.call_id, remote: cstr(ev.remote) },
+        2 => SipEvent::Incoming {
+            call_id: ev.call_id,
+            remote: cstr(ev.remote),
+            auto_answer: cstr(ev.text) == "intercom",
+        },
         3 => SipEvent::CallState {
             call_id: ev.call_id,
             state: cstr(ev.text),
@@ -205,6 +218,8 @@ extern "C" fn trampoline(ev: *const RawEvent, _user: *mut c_void) {
             done: cstr(ev.remote) == "final",
         },
         7 => SipEvent::Voicemail(Voicemail::parse(&cstr(ev.text))),
+        8 => SipEvent::Presence { number: cstr(ev.remote), state: cstr(ev.text) },
+        9 => SipEvent::Rejected { remote: cstr(ev.remote), code: ev.code, reason: cstr(ev.text) },
         _ => return,
     };
     // Never let a panic unwind into C.
@@ -378,6 +393,29 @@ pub fn ring(mode: Ring, tone: usize) -> Result<(), Error> {
 /// Number of ringtones the C side knows; should equal `RINGTONES.len()`.
 pub fn ringtone_count() -> usize {
     unsafe { sp_ringtone_count() as usize }
+}
+
+/// Do Not Disturb: new incoming calls get 486 Busy Here and never ring.
+pub fn set_dnd(on: bool) {
+    unsafe { sp_set_dnd(on as c_int) }
+}
+
+/// Forwards every incoming call to `dest` with a 302 redirect. `None` or an
+/// empty string turns forwarding off. Set it after the account is added.
+pub fn set_forward(dest: Option<&str>) {
+    let d = c(dest.unwrap_or("").trim());
+    unsafe { sp_set_forward(d.as_ptr()) }
+}
+
+/// Replaces the set of extensions watched for BLF. Results arrive as
+/// [`SipEvent::Presence`]. Needs a registered account.
+pub fn watch(numbers: &[String]) -> Result<(), Error> {
+    unsafe { sp_unwatch_all() };
+    for n in numbers {
+        let n = c(n.trim());
+        check(unsafe { sp_watch(n.as_ptr()) }, "watch")?;
+    }
+    Ok(())
 }
 
 /// Runs without a sound device. Meant for headless tests.

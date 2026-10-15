@@ -19,7 +19,7 @@ fn main() {
                     println!("  log: {line}");
                 }
             }
-            SipEvent::Incoming { call_id, ref remote } if env::var_os("SIP_ANSWER").is_some() => {
+            SipEvent::Incoming { call_id, ref remote, .. } if env::var_os("SIP_ANSWER").is_some() => {
                 println!("incoming call {call_id} from {remote}");
                 println!("answer: {:?}", sipcore::answer(call_id));
             }

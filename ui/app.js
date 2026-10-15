@@ -18,7 +18,23 @@ const STORE = {
   recents: "softphone.recents",
   contacts: "softphone.contacts",
   missed: "softphone.missed",
+  prefs: "softphone.prefs",
 };
+const DEFAULT_PREFS = {
+  dnd: false,
+  autoAnswer: "intercom",
+  forwardOn: false,
+  forwardTo: "",
+  blf: true,
+  hotkeys: false,
+  hkAnswer: "CommandOrControl+Alt+Shift+A",
+  hkHangup: "CommandOrControl+Alt+Shift+H",
+  hkMute: "CommandOrControl+Alt+Shift+M",
+};
+// Extensions watched for BLF: 2 to 6 digits. Capped so a big address book
+// doesn't flood the PBX with subscriptions.
+const EXTENSION = /^\d{2,6}$/;
+const MAX_WATCH = 50;
 const STATE_TEXT = {
   calling: "Calling…",
   ringing: "Ringing…",
@@ -37,6 +53,16 @@ let settingsOpen = false;
 let ticker = null;
 // Latest message-waiting status from the PBX: { waiting, new, old, account }.
 let voicemail = { waiting: false, new: 0, old: 0, account: "" };
+let registered = false;
+// number -> "idle" | "ringing" | "busy" | "unknown"
+const blf = new Map();
+// A tel:/sip: link that arrived before we were registered.
+let pendingDial = null;
+
+const prefs = () => ({ ...DEFAULT_PREFS, ...load(STORE.prefs, {}) });
+function setPrefs(patch) {
+  save(STORE.prefs, { ...prefs(), ...patch });
+}
 
 // ---------- storage ----------
 
@@ -238,7 +264,7 @@ function pickFocus() {
 }
 
 function updateRinger() {
-  const ringing = liveCalls().filter(isRingingIn);
+  const ringing = liveCalls().filter((c) => isRingingIn(c) && !c.autoAnswer);
   const wantRing = $("ring-on").checked;
   if (ringing.length && wantRing) {
     const busy = liveCalls().some((c) => !isRingingIn(c));
@@ -445,7 +471,7 @@ function renderRecents() {
   for (const r of list) {
     const name = displayName(r.number, r.name);
     const dir = r.dir === "out" ? "out" : "in";
-    const detail = r.dir === "missed" ? "Missed" : r.dur ? fmtDuration(r.dur) : r.dir === "out" ? "No answer" : "";
+    const detail = r.note ? r.note : r.dir === "missed" ? "Missed" : r.dur ? fmtDuration(r.dur) : r.dir === "out" ? "No answer" : "";
     ul.append(
       el("li", { class: r.dir === "missed" ? "missed" : "", onclick: () => dial(r.number), title: `Call ${r.number}` },
         el("span", { class: "dir" }, icon(dir)),
@@ -479,8 +505,8 @@ function renderContacts() {
   for (const c of list) {
     ul.append(
       el("li", { onclick: () => dial(c.number), title: `Call ${c.number}` },
-        el("div", { class: "avatar" }, initials(c.name)),
-        el("div", { class: "main" }, el("div", { class: "name" }, c.name), el("div", { class: "sub" }, c.number)),
+        blfAvatar(c),
+        el("div", { class: "main" }, el("div", { class: "name" }, c.name), el("div", { class: "sub" }, blfLabel(c.number))),
         el("div", { class: "actions" },
           el("button", { class: "call", title: "Call", onclick: (e) => { e.stopPropagation(); dial(c.number); } }, icon("phone")),
           el("button", { title: "Delete", onclick: (e) => { e.stopPropagation(); deleteContact(c.id); } }, icon("trash"))))
@@ -488,9 +514,35 @@ function renderContacts() {
   }
 }
 
+function blfAvatar(c) {
+  const a = el("div", { class: "avatar" }, initials(c.name));
+  const state = blf.get(normalize(c.number));
+  if (state) a.dataset.blf = state;
+  return a;
+}
+
+function blfLabel(number) {
+  const word = { idle: "Free", ringing: "Ringing", busy: "On a call" }[blf.get(normalize(number))];
+  return word ? `${number} · ${word}` : number;
+}
+
+// Subscribe to the call state of every contact that's an extension.
+function syncWatch() {
+  if (!registered) return;
+  const numbers = prefs().blf
+    ? [...new Set(load(STORE.contacts, []).map((c) => normalize(c.number)).filter((n) => EXTENSION.test(n)))].slice(0, MAX_WATCH)
+    : [];
+  const key = numbers.join(",");
+  if (syncWatch.last === key) return;
+  syncWatch.last = key;
+  blf.clear();
+  invoke("sip_watch", { numbers }).catch(() => {});
+}
+
 function deleteContact(id) {
   save(STORE.contacts, load(STORE.contacts, []).filter((c) => c.id !== id));
   refreshContactList();
+  syncWatch();
   render();
 }
 
@@ -506,6 +558,7 @@ function saveContact(e) {
   f.reset();
   f.classList.add("hidden");
   refreshContactList();
+  syncWatch();
   render();
 }
 
@@ -513,9 +566,33 @@ function saveContact(e) {
 
 function setReg(kind, text) {
   $("reg-dot").className = "dot " + kind;
-  $("reg-text").textContent = text;
+  setReg.text = text;
+  showRegText();
+}
+
+// "Registered · Do Not Disturb" etc.
+function showRegText() {
+  const p = prefs();
+  const extra = [];
+  if (p.dnd) extra.push("Do Not Disturb");
+  if (p.forwardOn && p.forwardTo.trim()) extra.push("Forwarding to " + p.forwardTo.trim());
+  $("reg-text").textContent = [setReg.text || "Not registered", ...extra].join(" · ");
   syncTray(load(STORE.missed, 0));
 }
+
+// Runs each time registration succeeds after not being registered.
+function onRegistered() {
+  applyForward();
+  syncWatch.last = null;
+  syncWatch();
+  if (pendingDial) {
+    const d = pendingDial;
+    pendingDial = null;
+    dial(d);
+  }
+}
+
+const accountKey = (a) => `${a.user}@${a.server}`;
 
 function fillForm() {
   const acc = load(STORE.account, {});
@@ -539,9 +616,21 @@ async function register(e) {
     display_name: data.display_name.trim() || null,
   };
   const { password, ...kept } = account;
+  const before = load(STORE.account, {});
+  if (before.user && accountKey(before) !== accountKey(account)) {
+    invoke("password_delete", { account: accountKey(before) }).catch(() => {});
+  }
   save(STORE.account, { ...kept, voicemail: data.voicemail.trim() });
+  if ($("remember-pw").checked) {
+    invoke("password_set", { account: accountKey(account), password }).catch((err) =>
+      toast("Couldn't save the password in the keychain: " + err)
+    );
+  } else {
+    invoke("password_delete", { account: accountKey(account) }).catch(() => {});
+  }
   $("acct-name").textContent = `${account.user}@${account.server}`;
   setReg("pending", "Registering…");
+  registered = false;
   try {
     await invoke("sip_register", { account });
     settingsOpen = false;
@@ -602,25 +691,164 @@ async function onAudioChange() {
   await applyAudio(true);
 }
 
+// ---------- do not disturb, forwarding, auto-answer ----------
+
+function applyDnd() {
+  const on = prefs().dnd;
+  $("btn-dnd").classList.toggle("on", on);
+  $("btn-dnd").title = on ? "Do Not Disturb is on: calls are turned away" : "Do Not Disturb is off";
+  invoke("sip_set_dnd", { on }).catch(() => {});
+  showRegText();
+}
+
+function toggleDnd() {
+  setPrefs({ dnd: !prefs().dnd });
+  applyDnd();
+  toast(prefs().dnd ? "Do Not Disturb is on." : "Do Not Disturb is off.");
+}
+
+function applyForward() {
+  const p = prefs();
+  const dest = p.forwardOn ? p.forwardTo.trim() : "";
+  invoke("sip_set_forward", { dest: dest || null }).catch(() => {});
+  showRegText();
+}
+
+function fillCallPrefs() {
+  const p = prefs();
+  $("auto-answer").value = p.autoAnswer;
+  $("fwd-on").checked = p.forwardOn;
+  $("fwd-to").value = p.forwardTo;
+  $("blf-on").checked = p.blf;
+  $("hotkeys-on").checked = p.hotkeys;
+  $("hk-answer").value = p.hkAnswer;
+  $("hk-hangup").value = p.hkHangup;
+  $("hk-mute").value = p.hkMute;
+}
+
+function onCallPrefsChange() {
+  const forwardTo = $("fwd-to").value.trim();
+  const forwardOn = $("fwd-on").checked && !!forwardTo;
+  if ($("fwd-on").checked && !forwardTo) toast("Enter a number to forward to.");
+  $("fwd-on").checked = forwardOn;
+  setPrefs({ autoAnswer: $("auto-answer").value, forwardOn, forwardTo, blf: $("blf-on").checked });
+  applyForward();
+  syncWatch();
+  render();
+}
+
+// ---------- hotkeys and login item ----------
+
+async function applyHotkeys(announce) {
+  const p = prefs();
+  const keys = p.hotkeys
+    ? [["answer", p.hkAnswer], ["hangup", p.hkHangup], ["mute", p.hkMute]]
+    : [];
+  try {
+    await invoke("set_hotkeys", { keys });
+    if (announce && p.hotkeys) toast("Hotkeys are on.");
+  } catch (err) {
+    toast("These hotkeys couldn't be set (another app may use them): " + err);
+  }
+}
+
+function onHotkeyPrefsChange() {
+  setPrefs({
+    hotkeys: $("hotkeys-on").checked,
+    hkAnswer: $("hk-answer").value.trim(),
+    hkHangup: $("hk-hangup").value.trim(),
+    hkMute: $("hk-mute").value.trim(),
+  });
+  applyHotkeys(true);
+}
+
+function onHotkey(action) {
+  const ringing = liveCalls().find(isRingingIn);
+  const cur = calls.get(focusId);
+  if (action === "answer" && ringing) answer(ringing.id);
+  else if (action === "hangup") {
+    if (ringing && (!cur || cur.ended || cur.id === ringing.id)) hangup(ringing.id);
+    else if (cur && !cur.ended) hangup(cur.id);
+  } else if (action === "mute") $("btn-mute").click();
+}
+
+async function loadAutostart() {
+  $("autostart").checked = await invoke("get_autostart").catch(() => false) === true;
+}
+
+// ---------- click-to-dial links ----------
+
+// "tel:+1 (555) 123-4567" -> "+15551234567"; "sip:1002@pbx" stays a URI;
+// "callto://jane@pbx" -> "sip:jane@pbx".
+function linkToDest(url) {
+  let s = String(url).trim();
+  try { s = decodeURIComponent(s); } catch {}
+  const lower = s.toLowerCase();
+  if (lower.startsWith("sip:") || lower.startsWith("sips:")) return s.split("?")[0];
+  s = s.replace(/^(tel|callto):(\/\/)?/i, "").split(/[;?]/)[0];
+  if (s.includes("@")) return "sip:" + s;
+  return s.replace(/[^0-9+*#a-z]/gi, "");
+}
+
+async function takeDialLink() {
+  const url = await invoke("take_dial_link").catch(() => null);
+  if (!url) return;
+  const dest = linkToDest(url);
+  if (!dest) return;
+  if (registered) dial(dest);
+  else {
+    pendingDial = dest;
+    $("dial").value = dest;
+    toast("Will call " + dest + " once you're signed in.");
+  }
+}
+
 // ---------- SIP events ----------
 
 function onSip(ev) {
   switch (ev.type) {
     case "registration":
-      if (ev.registered) setReg("ok", "Registered");
-      else if (ev.code >= 300 || ev.code === 0) setReg("err", `${ev.code || ""} ${ev.reason || "Not registered"}`.trim());
+      if (ev.registered) {
+        setReg("ok", "Registered");
+        if (!registered) {
+          registered = true;
+          onRegistered();
+        }
+        break;
+      }
+      registered = false;
+      if (ev.code >= 300 || ev.code === 0) setReg("err", `${ev.code || ""} ${ev.reason || "Not registered"}`.trim());
       else setReg("", "Not registered");
       break;
     case "incoming": {
-      addCall(ev.call_id, ev.remote, true);
-      if (liveCalls().length === 1) {
+      const call = addCall(ev.call_id, ev.remote, true);
+      const alone = liveCalls().length === 1;
+      if (alone) {
         focusId = ev.call_id;
         settingsOpen = false;
       }
-      updateRinger();
+      const mode = prefs().autoAnswer;
+      if (alone && (mode === "all" || (mode === "intercom" && ev.auto_answer))) {
+        call.autoAnswer = true;
+        setTimeout(() => !call.ended && !call.answered && answer(call.id), 400);
+      } else {
+        updateRinger();
+      }
       render();
       break;
     }
+    case "rejected": {
+      const { name, number } = parseRemote(ev.remote);
+      const forwarded = ev.reason === "forwarded";
+      addRecent({ number, name, dir: "missed", at: Date.now(), dur: 0, note: forwarded ? "Forwarded" : "Do Not Disturb" });
+      if (!forwarded) save(STORE.missed, load(STORE.missed, 0) + 1);
+      render();
+      break;
+    }
+    case "presence":
+      blf.set(normalize(ev.number), ev.state);
+      if (tab === "contacts" && !settingsOpen && !calls.size) renderContacts();
+      break;
     case "call_state": {
       const call = calls.get(ev.call_id);
       if (!call) return;
@@ -708,11 +936,25 @@ for (const b of $("tabs").querySelectorAll("button")) {
 }
 $("btn-settings").addEventListener("click", () => {
   settingsOpen = !settingsOpen;
-  if (settingsOpen) loadDevices();
+  if (settingsOpen) {
+    loadDevices();
+    loadAutostart();
+  }
   render();
 });
 $("acct-form").addEventListener("submit", register);
 $("btn-vm").addEventListener("click", callVoicemail);
+$("btn-dnd").addEventListener("click", toggleDnd);
+for (const id of ["auto-answer", "fwd-on", "fwd-to", "blf-on"]) $(id).addEventListener("change", onCallPrefsChange);
+for (const id of ["hotkeys-on", "hk-answer", "hk-hangup", "hk-mute"]) $(id).addEventListener("change", onHotkeyPrefsChange);
+$("autostart").addEventListener("change", async (e) => {
+  try {
+    await invoke("set_autostart", { on: e.target.checked });
+  } catch (err) {
+    toast("Couldn't change the login item: " + err);
+    loadAutostart();
+  }
+});
 // Saved as you type so it works without registering again.
 $("acct-form").elements.voicemail.addEventListener("change", (e) => {
   save(STORE.account, { ...load(STORE.account, {}), voicemail: e.target.value.trim() });
@@ -770,9 +1012,33 @@ refreshContactList();
 listen("sip", (e) => onSip(e.payload));
 listen("show-recents", () => setTab("recents"));
 listen("call-voicemail", () => callVoicemail());
+listen("toggle-dnd", () => toggleDnd());
+listen("hotkey", (e) => onHotkey(e.payload));
+listen("dial-link", () => takeDialLink());
 applyAudio();
-if (!load(STORE.account, {}).server) settingsOpen = true;
+fillCallPrefs();
+applyDnd();
+applyHotkeys(false);
+loadAutostart();
+takeDialLink();
+autoRegister();
 render();
+
+// Signs in with the saved password, or opens Settings when there's nothing to use.
+async function autoRegister() {
+  const acc = load(STORE.account, {});
+  if (!acc.server || !acc.user) {
+    settingsOpen = true;
+    return render();
+  }
+  const password = await invoke("password_get", { account: accountKey(acc) }).catch(() => null);
+  if (!password) {
+    settingsOpen = true;
+    return render();
+  }
+  $("acct-form").elements.password.value = password;
+  $("acct-form").requestSubmit();
+}
 
 // ---------- browser preview (no Tauri) ----------
 
@@ -783,6 +1049,12 @@ function mockInvoke(cmd, args) {
     setTimeout(() => onSip({ type: "voicemail", waiting: true, new: 2, old: 5, account: "sip:*97@pbx" }), 900);
   }
   if (cmd === "sip_call") return Promise.resolve((mockInvoke.n = (mockInvoke.n || 0) + 1));
+  if (cmd === "sip_register")
+    setTimeout(() => {
+      onSip({ type: "presence", number: "1002", state: "idle" });
+      onSip({ type: "presence", number: "1003", state: "busy" });
+      onSip({ type: "presence", number: "1004", state: "ringing" });
+    }, 1000);
   if (cmd === "ringtones") return Promise.resolve(["Chirp", "Classic", "British", "Digital", "Chime", "Soft", "Office"]);
   if (cmd === "audio_devices")
     return Promise.resolve([
