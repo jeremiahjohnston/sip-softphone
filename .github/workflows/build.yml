@@ -59,10 +59,30 @@ jobs:
           [ -f deps/pjsip/lib/pkgconfig/libpjproject.pc ] || ./scripts/build-pjsip-macos.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Version and update settings
-        run: bash scripts/ci-tauri-config.sh tauri.ci.json
       - name: Build app
+        env:
+          # Optional: sign with an Apple Developer ID and notarize, so macOS opens
+          # the app without the "damaged" warning. See "macOS signing" in the README.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Missing secrets arrive as empty strings; Tauri treats any set
+          # variable as a request to sign or notarize, so drop the empty ones.
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || unset "$v"
+          done
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            echo "::warning title=macOS signing::No APPLE_CERTIFICATE secret, so the app is ad-hoc signed and macOS will call it damaged after download."
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          elif [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
+            echo "::warning title=macOS notarization::Signed with the Developer ID but not notarized: set APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID."
+            unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          bash scripts/ci-tauri-config.sh tauri.ci.json
           export PJSIP_DIR="$PWD/deps/pjsip"
           set -o pipefail
           npx --yes @tauri-apps/cli@2 build --bundles app,dmg --config tauri.ci.json 2>&1 | tee build.log
@@ -75,10 +95,21 @@ jobs:
           sig=$(codesign -dv --entitlements - "$app" 2>&1 | grep -E "Signature|flags|audio-input|Identifier"  || true)
           libs=$(otool -L "$app/Contents/MacOS/sip-softphone" | grep -iE "audio|coreaudio"  || true)
           devs=$(nm "$app/Contents/MacOS/sip-softphone" | grep -ciE "coreaudio_factory|ca_factory" || true)
+          # "accepted, source=Notarized Developer ID" means it opens without warnings.
+          gk=$(spctl -a -vv -t exec "$app" 2>&1 || true)
           hdiutil detach /tmp/sp >/dev/null
-          msg="$info"$'\n'"$sig"$'\n'"$libs"$'\n'"coreaudio factory symbols: $devs"
+          msg="$info"$'\n'"$sig"$'\n'"$libs"$'\n'"coreaudio factory symbols: $devs"$'\n'"Gatekeeper: $gk"
           msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
           echo "::notice title=macOS app::$msg"
+      - name: Check install script
+        run: |
+          # The parts of scripts/install-macos.sh that depend on this build's output.
+          feed='{"version":"1.2.3","platforms":{"darwin-aarch64":{"url":"https://example.com/a.tar.gz"}}}'
+          [ "$(printf '%s' "$feed" | plutil -extract platforms.darwin-aarch64.url raw -o - -)" = https://example.com/a.tar.gz ]
+          [ "$(printf '%s' "$feed" | plutil -extract version raw -o - -)" = 1.2.3 ]
+          tgz=$(ls target/release/bundle/macos/*.app.tar.gz 2>/dev/null | head -1 || true)
+          [ -z "$tgz" ] || tar -tzf "$tgz" | grep -q '^SIP Softphone.app/'
+          bash -n scripts/install-macos.sh
       - name: Report build errors
         if: failure()
         run: |

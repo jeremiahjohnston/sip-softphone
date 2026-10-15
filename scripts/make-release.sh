@@ -54,6 +54,9 @@ fi
 
 [ "$platforms" != '{}' ] || { echo "No signed update files found" >&2; exit 1; }
 
+# The macOS install command downloads this from the latest release.
+sed "s|jeremiahjohnston/sip-softphone|$REPO|g" "$(dirname "$0")/install-macos.sh" > "$out/install-macos.sh"
+
 notes="${NOTES:-}"
 jq -n --arg v "$VERSION" --arg notes "$notes" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson p "$platforms" '{version: $v, notes: $notes, pub_date: $date, platforms: $p}' > "$out/latest.json"
