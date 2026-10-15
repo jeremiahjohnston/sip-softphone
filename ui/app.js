@@ -210,7 +210,7 @@ function renderVoicemail() {
 }
 
 // The number to dial for voicemail: the setting, else the mailbox the PBX
-// reported, else FreePBX's default *97.
+// reported, else *97 (the FreePBX/Asterisk default).
 function voicemailNumber() {
   const set = (load(STORE.account, {}).voicemail || "").trim();
   if (set) return set;

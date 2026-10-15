@@ -1,7 +1,8 @@
 # SIP Softphone
 
-A simple, modern SIP softphone that registers straight to your own PBX
-(FreePBX / Asterisk). No vendor cloud, no account sign-up.
+A simple, modern SIP softphone that works with any standard SIP server or
+provider: FreePBX, Asterisk, 3CX, FreeSWITCH, FusionPBX, a hosted VoIP
+service, and so on. No vendor cloud, no account sign-up.
 
 Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 [PJSIP](https://www.pjsip.org). Runs on macOS, Windows and Linux.
@@ -15,7 +16,7 @@ Built with [Tauri](https://tauri.app) (Rust + web UI) on top of
 - Recents (call history with missed-call badge) and contacts
 - Seven ringtones on the selected speaker; the window comes forward on incoming calls
 - Tray / menu bar icon with a missed-call dot; closing the window keeps the phone running
-- Voicemail indicator: a badge with the new-message count from the PBX (SIP MWI); click it, or "Call voicemail" in the tray, to dial voicemail (*97 unless you set another number)
+- Voicemail indicator: a badge with the new-message count from the PBX (SIP MWI); click it, or "Call voicemail" in the tray, to dial voicemail (set your system's voicemail number in Account; *97 is used if you leave it blank)
 - Do Not Disturb (header moon or tray menu) and call forwarding; turned-away calls still show in Recents
 - Password saved in the system keychain; signs in automatically at launch
 - Click-to-dial: tel:, sip: and callto: links open the app and dial
@@ -112,11 +113,15 @@ PJSIP_DIR=... SIP_SERVER=pbx.lan SIP_USER=1001 SIP_PASS=secret SIP_DIAL=1002 \
 
 See the top of `sipcore/examples/smoke.rs` for the other options.
 
-## FreePBX notes
+## Connecting to your phone system
 
-- Use a **PJSIP** extension (Chan SIP also works). UDP on port 5060 is the usual default.
+- Enter the server, extension (or username) and password your phone system or
+  provider gave you. UDP on port 5060 is the usual default; TCP and TLS are
+  also available.
+- On FreePBX, use a **PJSIP** extension (Chan SIP also works).
 - If you can call out but hear nothing, or calls drop after ~30 seconds, it's
-  usually NAT or firewall on the RTP ports (10000-20000 on Asterisk by default).
+  usually NAT or a firewall blocking the audio (RTP) ports, 10000-20000 on
+  Asterisk-based systems by default.
 
 ## License
 

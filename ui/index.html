@@ -120,7 +120,7 @@
     <section id="view-settings" class="view list-view hidden">
       <h2>Account</h2>
       <form id="acct-form">
-        <label>Server (FreePBX host or IP)<input name="server" required placeholder="pbx.example.lan" /></label>
+        <label>Server (host name or IP)<input name="server" required placeholder="pbx.example.lan" /></label>
         <div class="two">
           <label>Port<input name="port" type="number" min="0" max="65535" placeholder="5060" /></label>
           <label>Transport
@@ -166,7 +166,7 @@
         <label class="check"><input type="checkbox" id="fwd-on" /> Forward all calls</label>
         <label>Forward to<input id="fwd-to" placeholder="Number or extension" autocomplete="off" list="contact-list" /></label>
         <label class="check"><input type="checkbox" id="blf-on" checked /> Show whether contacts' extensions are free, ringing or busy</label>
-        <p class="hint">Intercom calls are ones your PBX marks for auto-answer, like FreePBX's *80. Forwarding sends callers on to the other number without ringing here. Extension status lights appear on contacts whose number is an extension (2 to 6 digits).</p>
+        <p class="hint">Intercom calls are ones your PBX marks for auto-answer, like FreePBX's *80 paging. Forwarding sends callers on to the other number without ringing here. Extension status lights appear on contacts whose number is an extension (2 to 6 digits).</p>
       </div>
       <h2>Shortcuts and startup</h2>
       <div class="audio">
