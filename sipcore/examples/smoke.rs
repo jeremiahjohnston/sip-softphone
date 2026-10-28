@@ -5,6 +5,7 @@
 //!
 //! SIP_XFER=<dest> transfers the call there (SIP_ATTENDED=1 consults first).
 //! SIP_WAIT=<secs> stays up for incoming calls, SIP_ANSWER=1 answers them.
+//! SIP_WATCH=1002,1003 subscribes to those extensions' BLF state.
 //! SIP_NULL_AUDIO=1 runs without a sound device, SIP_LOG=1 prints pjsip logs.
 //! With no SIP_SERVER it just starts and stops the stack.
 
@@ -73,6 +74,11 @@ fn main() {
         })
         .expect("register");
         thread::sleep(Duration::from_secs(3));
+
+        if let Ok(list) = env::var("SIP_WATCH") {
+            let numbers: Vec<String> = list.split(',').map(str::to_string).collect();
+            println!("watch: {:?}", sipcore::watch(&numbers));
+        }
 
         if let Ok(dest) = env::var("SIP_DIAL") {
             let id = sipcore::call(&dest).expect("call");

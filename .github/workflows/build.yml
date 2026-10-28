@@ -23,7 +23,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: deps
-          key: pjsip-windows-${{ hashFiles('scripts/build-pjsip-windows.ps1') }}
+          key: pjsip-windows-${{ hashFiles('scripts/build-pjsip-windows.ps1', 'scripts/pjsip-patches/*.patch') }}
       - name: Build PJSIP
         shell: pwsh
         run: |
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: deps
-          key: pjsip-macos-${{ hashFiles('scripts/build-pjsip-macos.sh') }}
+          key: pjsip-macos-${{ hashFiles('scripts/build-pjsip-macos.sh', 'scripts/pjsip-patches/*.patch') }}
       - name: Build PJSIP
         run: |
           [ -f deps/pjsip/lib/pkgconfig/libpjproject.pc ] || ./scripts/build-pjsip-macos.sh
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: deps
-          key: pjsip-linux-${{ hashFiles('scripts/build-pjsip-linux.sh') }}
+          key: pjsip-linux-${{ hashFiles('scripts/build-pjsip-linux.sh', 'scripts/pjsip-patches/*.patch') }}
       - name: Build PJSIP
         run: |
           [ -f deps/pjsip/lib/pkgconfig/libpjproject.pc ] || ./scripts/build-pjsip-linux.sh

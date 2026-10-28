@@ -10,8 +10,20 @@ $Src = Join-Path $Deps "pjproject"
 
 New-Item -ItemType Directory -Force -Path $Deps | Out-Null
 if (-not (Test-Path $Src)) {
-    git clone --depth 1 --branch $Version https://github.com/pjsip/pjproject $Src
+    git clone -c core.autocrlf=false --depth 1 --branch $Version https://github.com/pjsip/pjproject $Src
 }
+
+# Our fixes on top of the release (see scripts\pjsip-patches\README.md).
+# Windows PowerShell treats git's stderr as an error under "Stop".
+$ErrorActionPreference = "Continue"
+foreach ($p in Get-ChildItem (Join-Path $PSScriptRoot "pjsip-patches\*.patch")) {
+    git -C $Src apply --ignore-whitespace --reverse --check $p.FullName 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        git -C $Src apply --ignore-whitespace $p.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Couldn't apply $($p.Name)" }
+    }
+}
+$ErrorActionPreference = "Stop"
 
 # Our build options. Video is off; TLS comes later.
 @"

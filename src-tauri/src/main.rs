@@ -35,7 +35,9 @@ struct AccountForm {
     display_name: Option<String>,
 }
 
-/// The current session's SIP log, rewritten each launch.
+/// The current session's SIP log, rewritten each launch. The previous
+/// session's is kept as sip.prev.log, so a crash can still be looked into
+/// after the app is reopened.
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 static LOG: OnceLock<Mutex<File>> = OnceLock::new();
 
@@ -44,6 +46,7 @@ fn open_log(dir: PathBuf) {
         return;
     }
     let path = dir.join("sip.log");
+    let _ = std::fs::rename(&path, dir.join("sip.prev.log"));
     if let Ok(file) = File::create(&path) {
         let _ = LOG.set(Mutex::new(file));
         let _ = LOG_PATH.set(path);
@@ -505,6 +508,13 @@ fn main() {
             if let Ok(dir) = app.path().app_log_dir() {
                 open_log(dir);
             }
+            // Panics otherwise only go to stderr, which nobody sees in the
+            // bundled app, so put them in the log too.
+            let default_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                log_line(&format!("panic: {info}"));
+                default_hook(info);
+            }));
             log_line(&format!(
                 "SIP Softphone {} on {} {}",
                 app.package_info().version,
