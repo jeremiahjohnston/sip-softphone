@@ -398,6 +398,11 @@ int sp_set_account(const char *server, int port, const char *transport,
     acc.cred_info[0].data = pj_str((char *)password);
     /* Ask the PBX for voicemail counts (SUBSCRIBE to message-summary). */
     acc.mwi_enabled = PJ_TRUE;
+    /* When the PBX can't be reached, keep retrying every 30s or so instead of
+     * pjsua's default five minutes, so the phone is back soon after it is. */
+    acc.reg_retry_interval = 30;
+    acc.reg_first_retry_interval = 5;
+    acc.reg_retry_random_interval = 5;
 
     /* pjsua copies the config, so the stack buffers above are fine. */
     status = pjsua_acc_add(&acc, PJ_TRUE, &g_acc);

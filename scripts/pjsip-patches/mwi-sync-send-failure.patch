@@ -1,0 +1,103 @@
+diff --git a/pjsip/src/pjsua-lib/pjsua_pres.c b/pjsip/src/pjsua-lib/pjsua_pres.c
+index 9299312..8a55e42 100644
+--- a/pjsip/src/pjsua-lib/pjsua_pres.c
++++ b/pjsip/src/pjsua-lib/pjsua_pres.c
+@@ -2165,7 +2165,7 @@ static void subscribe_buddy(pjsua_buddy_id buddy_id,
+     }
+ 
+     buddy->presence = presence;
+-    pjsip_dlg_dec_lock(buddy->dlg);
++    pjsip_dlg_dec_lock(dlg);
+     if (tmp_pool) pj_pool_release(tmp_pool);
+     pj_log_pop_indent();
+ }
+@@ -2343,6 +2343,7 @@ static pjsip_evsub_user mwi_cb =
+ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+ {
+     pjsua_acc *acc;
++    pjsip_dialog *dlg;
+     pj_pool_t *tmp_pool = NULL;
+     pj_str_t contact;
+     pjsip_tx_data *tdata;
+@@ -2378,9 +2379,13 @@ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+         if (!force_renew)
+             return PJ_SUCCESS;
+         
+-        /* Update MWI subscription */
+-        pj_assert(acc->mwi_dlg);
+-        pjsip_dlg_inc_lock(acc->mwi_dlg);
++        /* Update MWI subscription. A send that fails synchronously can
++         * terminate the subscription and clear acc->mwi_dlg, so keep our
++         * own pointer to the dialog we locked.
++         */
++        dlg = acc->mwi_dlg;
++        pj_assert(dlg);
++        pjsip_dlg_inc_lock(dlg);
+         
+         status = pjsip_mwi_initiate(acc->mwi_sub, acc->cfg.mwi_expires, &tdata);
+         if (status == PJ_SUCCESS) {
+@@ -2388,7 +2393,7 @@ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+             status = pjsip_pres_send_request(acc->mwi_sub, tdata);
+         }
+ 
+-        pjsip_dlg_dec_lock(acc->mwi_dlg);
++        pjsip_dlg_dec_lock(dlg);
+         return status;
+     }
+ 
+@@ -2425,7 +2430,8 @@ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+     /* Increment the dialog's lock otherwise when presence session creation
+      * fails the dialog will be destroyed prematurely.
+      */
+-    pjsip_dlg_inc_lock(acc->mwi_dlg);
++    dlg = acc->mwi_dlg;
++    pjsip_dlg_inc_lock(dlg);
+ 
+     if (acc->cfg.allow_via_rewrite && acc->via_addr.host.slen > 0) {
+         pjsip_dlg_set_via_sent_by(acc->mwi_dlg, &acc->via_addr, acc->via_tp);
+@@ -2452,7 +2458,8 @@ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+                                   PJSIP_EVSUB_NO_EVENT_ID, &acc->mwi_sub);
+     if (status != PJ_SUCCESS) {
+         pjsua_perror(THIS_FILE, "Error creating MWI subscription", status);
+-        pjsip_dlg_dec_lock(acc->mwi_dlg);
++        acc->mwi_dlg = NULL;
++        pjsip_dlg_dec_lock(dlg);
+         goto on_return;
+     }
+ 
+@@ -2478,7 +2485,7 @@ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+ 
+     status = pjsip_mwi_initiate(acc->mwi_sub, acc->cfg.mwi_expires, &tdata);
+     if (status != PJ_SUCCESS) {
+-        pjsip_dlg_dec_lock(acc->mwi_dlg);
++        pjsip_dlg_dec_lock(dlg);
+         pjsip_pres_terminate(acc->mwi_sub, PJ_FALSE);
+         acc->mwi_sub = NULL;
+         acc->mwi_dlg = NULL;
+@@ -2489,10 +2496,15 @@ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+ 
+     pjsua_process_msg_data(tdata, NULL);
+ 
++    /* If the send fails synchronously (e.g. the server's host is down), the
++     * transaction callback may already have terminated the subscription and
++     * cleared acc->mwi_sub and acc->mwi_dlg.
++     */
+     status = pjsip_pres_send_request(acc->mwi_sub, tdata);
+     if (status != PJ_SUCCESS) {
+-        pjsip_dlg_dec_lock(acc->mwi_dlg);
+-        pjsip_pres_terminate(acc->mwi_sub, PJ_FALSE);
++        if (acc->mwi_sub)
++            pjsip_pres_terminate(acc->mwi_sub, PJ_FALSE);
++        pjsip_dlg_dec_lock(dlg);
+         acc->mwi_sub = NULL;
+         acc->mwi_dlg = NULL;
+         pjsua_perror(THIS_FILE, "Unable to send initial MWI SUBSCRIBE", 
+@@ -2500,7 +2512,7 @@ pj_status_t pjsua_start_mwi(pjsua_acc_id acc_id, pj_bool_t force_renew)
+         goto on_return;
+     }
+ 
+-    pjsip_dlg_dec_lock(acc->mwi_dlg);
++    pjsip_dlg_dec_lock(dlg);
+ 
+ on_return:
+     if (tmp_pool) pj_pool_release(tmp_pool);
