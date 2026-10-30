@@ -29,13 +29,16 @@
   </svg>
 
   <header>
-    <div class="who">
-      <span id="reg-dot" class="dot"></span>
-      <div>
-        <div id="acct-name" class="acct">No account</div>
-        <div id="reg-text" class="sub">Not registered</div>
-      </div>
-    </div>
+    <button id="who" class="who" title="Account settings">
+      <span id="acct-avatar" class="avatar me">
+        <span id="acct-initials"><svg><use href="#i-person"/></svg></span>
+        <span id="reg-dot" class="dot"></span>
+      </span>
+      <span class="who-text">
+        <span id="acct-name" class="acct">No account</span>
+        <span id="reg-text" class="sub">Not registered</span>
+      </span>
+    </button>
     <div class="head-actions">
       <button id="btn-dnd" class="icon dnd" title="Do Not Disturb is off"><svg><use href="#i-moon"/></svg></button>
       <button id="btn-vm" class="icon vm" title="Call voicemail"><svg><use href="#i-vm"/></svg><i id="vm-badge" class="badge hidden"></i></button>
@@ -48,7 +51,7 @@
     <section id="view-dial" class="view">
       <div class="dial-row">
         <input id="dial" class="dial" placeholder="Number or extension" autocomplete="off" list="contact-list" />
-        <button id="btn-back" class="icon" title="Delete"><svg><use href="#i-back"/></svg></button>
+        <button id="btn-back" class="icon invisible" title="Delete"><svg><use href="#i-back"/></svg></button>
       </div>
       <div class="pad" id="pad"></div>
       <button id="btn-call" class="round green" title="Call"><svg><use href="#i-phone"/></svg></button>
@@ -119,7 +122,15 @@
     <!-- Settings -->
     <section id="view-settings" class="view list-view hidden">
       <h2>Account</h2>
-      <form id="acct-form">
+      <div id="acct-card" class="acct-card hidden">
+        <div id="acct-card-avatar" class="avatar"></div>
+        <div class="main">
+          <div id="acct-card-name" class="name"></div>
+          <div id="acct-card-uri" class="uri"></div>
+          <div id="acct-card-status" class="sub"></div>
+        </div>
+      </div>
+      <form id="acct-form" class="card">
         <label>Server (host name or IP)<input name="server" required placeholder="pbx.example.lan" /></label>
         <div class="two">
           <label>Port<input name="port" type="number" min="0" max="65535" placeholder="5060" /></label>
@@ -144,7 +155,7 @@
         </div>
       </form>
       <h2>Audio</h2>
-      <div class="audio">
+      <div class="audio card">
         <label>Microphone<select id="mic"></select></label>
         <label>Speaker<select id="speaker"></select></label>
         <label class="check"><input type="checkbox" id="ring-on" checked /> Play a ringtone for incoming calls</label>
@@ -155,7 +166,7 @@
         <p class="hint">Changes apply right away, even during a call. Plugged in a headset? Reopen this screen to see it. Closing the window keeps the phone running in the tray / menu bar; quit from there.</p>
       </div>
       <h2>Calls</h2>
-      <div class="audio">
+      <div class="audio card">
         <label>Auto-answer
           <select id="auto-answer">
             <option value="off">Off</option>
@@ -169,7 +180,7 @@
         <p class="hint">Intercom calls are ones your PBX marks for auto-answer, like FreePBX's *80 paging. Forwarding sends callers on to the other number without ringing here. Extension status lights appear on contacts whose number is an extension (2 to 6 digits).</p>
       </div>
       <h2>Shortcuts and startup</h2>
-      <div class="audio">
+      <div class="audio card">
         <label class="check"><input type="checkbox" id="autostart" /> Open at login (starts in the tray / menu bar)</label>
         <label class="check"><input type="checkbox" id="hotkeys-on" /> Global hotkeys, even when the app is in the background</label>
         <label>Answer<input id="hk-answer" autocomplete="off" /></label>
@@ -178,20 +189,24 @@
         <p class="hint">Write keys like CommandOrControl+Alt+Shift+A (Command on Mac, Ctrl elsewhere). Links like tel:5551234 and sip:1002@pbx open here and dial.</p>
       </div>
       <h2>Updates</h2>
-      <p class="hint" id="update-status">Checks for new versions at startup and every few hours.</p>
-      <div class="row-end left">
-        <button type="button" id="btn-update-check" class="ghost">Check for updates</button>
-        <button type="button" id="btn-update-install" class="primary hidden">Install and restart</button>
+      <div class="card">
+        <p class="hint" id="update-status">Checks for new versions at startup and every few hours.</p>
+        <div class="row-end left">
+          <button type="button" id="btn-update-check" class="ghost">Check for updates</button>
+          <button type="button" id="btn-update-install" class="primary hidden">Install and restart</button>
+        </div>
       </div>
       <h2>Troubleshooting</h2>
-      <p class="hint">The app keeps a log of the current session. If something goes wrong, make a short call, then click below and drag the sip.log file into a message.</p>
-      <div class="row-end left">
-        <button type="button" id="btn-show-log" class="ghost">Show log file</button>
+      <div class="card">
+        <p class="hint">The app keeps a log of the current session. If something goes wrong, make a short call, then click below and drag the sip.log file into a message.</p>
+        <div class="row-end left">
+          <button type="button" id="btn-show-log" class="ghost">Show log file</button>
+        </div>
+        <details>
+          <summary>View log here</summary>
+          <pre id="log"></pre>
+        </details>
       </div>
-      <details>
-        <summary>View log here</summary>
-        <pre id="log"></pre>
-      </details>
     </section>
   </main>
 
