@@ -38,7 +38,7 @@ jobs:
         run: |
           $env:PJSIP_DIR = "$PWD/deps/pjproject"
           npx --yes @tauri-apps/cli@2 build --bundles nsis --config tauri.ci.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sip-softphone-windows
           path: |
@@ -120,7 +120,7 @@ jobs:
           [ -n "$msg" ] || msg=$(tail -40 build.log | cut -c1-300)
           msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
           echo "::error title=macOS build::$msg"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sip-softphone-macos
           path: |
@@ -153,7 +153,7 @@ jobs:
         run: |
           export PJSIP_DIR="$PWD/deps/pjsip"
           npx --yes @tauri-apps/cli@2 build --bundles deb,appimage --config tauri.ci.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sip-softphone-linux
           path: |
