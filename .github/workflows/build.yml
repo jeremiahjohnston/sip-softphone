@@ -20,7 +20,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: deps
           key: pjsip-windows-${{ hashFiles('scripts/build-pjsip-windows.ps1', 'scripts/pjsip-patches/*.patch') }}
@@ -50,7 +50,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: deps
           key: pjsip-macos-${{ hashFiles('scripts/build-pjsip-macos.sh', 'scripts/pjsip-patches/*.patch') }}
@@ -138,7 +138,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libasound2-dev \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev file libdbus-1-dev
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: deps
           key: pjsip-linux-${{ hashFiles('scripts/build-pjsip-linux.sh', 'scripts/pjsip-patches/*.patch') }}
