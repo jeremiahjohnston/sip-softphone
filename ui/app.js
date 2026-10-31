@@ -126,6 +126,18 @@ function parseRemote(uri) {
   return { name, number };
 }
 
+// How a number reads on screen: "sip:1002@pbx.example.com" -> "1002" when
+// it's on our own server, "1002@other.host" otherwise. Long domains are
+// what make addresses unreadable, so ours is never shown.
+function prettyNumber(n) {
+  const s = String(n || "").replace(/^sips?:/i, "").split(";")[0];
+  const at = s.lastIndexOf("@");
+  if (at < 0) return s;
+  const host = s.slice(at + 1).split(":")[0].toLowerCase();
+  const own = String(load(STORE.account, {}).server || "").toLowerCase();
+  return host === own ? s.slice(0, at) : s;
+}
+
 const normalize = (n) => String(n || "").replace(/[\s\-().]/g, "").toLowerCase();
 
 function contactFor(number) {
@@ -134,7 +146,7 @@ function contactFor(number) {
 }
 
 function displayName(number, fallbackName) {
-  return contactFor(number)?.name || fallbackName || number;
+  return contactFor(number)?.name || fallbackName || prettyNumber(number);
 }
 
 function initials(name) {
@@ -142,6 +154,21 @@ function initials(name) {
   if (!parts.length) return "#";
   if (/^\d/.test(parts[0])) return "#";
   return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+}
+
+// A steady colour per name, so avatars are easy to tell apart.
+const AVATAR_HUES = [168, 210, 260, 300, 340, 20, 40, 130];
+function avatar(name, cls = "avatar") {
+  const a = el("div", { class: cls }, initials(name));
+  tint(a, name);
+  return a;
+}
+function tint(node, name) {
+  // Numbers without a name get a plain grey "#".
+  node.classList.toggle("anon", initials(name) === "#");
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  node.style.setProperty("--hue", AVATAR_HUES[h % AVATAR_HUES.length]);
 }
 
 function fmtDuration(s) {
@@ -171,6 +198,7 @@ function render() {
     $("view-" + v).classList.toggle("hidden", v !== view);
   }
   $("tabs").classList.toggle("hidden", inCall && !settingsOpen);
+  $("btn-settings").classList.toggle("on", settingsOpen);
   for (const b of $("tabs").querySelectorAll("button")) {
     b.classList.toggle("on", !settingsOpen && b.dataset.tab === tab);
   }
@@ -286,9 +314,12 @@ function renderCalls() {
   if (!call) return;
 
   const shown = displayName(call.number, call.name);
+  const number = prettyNumber(call.number);
   $("call-avatar").textContent = initials(shown);
+  tint($("call-avatar"), shown);
   $("call-remote").textContent = shown;
-  $("call-number").textContent = shown !== call.number ? call.number : "";
+  $("call-remote").title = call.remote;
+  $("call-number").textContent = shown !== number ? number : "";
   let state = STATE_TEXT[call.state] || call.state;
   if (call.held && !call.ended) state = "On hold";
   $("call-state").textContent = state;
@@ -331,8 +362,8 @@ function renderCalls() {
     }
     box.append(
       el("div", { class: "other" },
-        el("div", { class: "avatar" }, initials(name)),
-        el("div", { class: "main" }, el("div", { class: "name" }, name), el("div", { class: "sub" }, status)),
+        avatar(name),
+        el("div", { class: "main" }, el("div", { class: "name", title: c.remote }, name), el("div", { class: "sub" }, status)),
         ...buttons)
     );
   }
@@ -360,6 +391,7 @@ async function dial(dest) {
     focusId = id;
     settingsOpen = false;
     $("dial").value = "";
+    syncDial();
     render();
   } catch {
     toast("Couldn't place the call. Check that you're registered.");
@@ -470,14 +502,16 @@ function renderRecents() {
   $("recents-empty").classList.toggle("hidden", list.length > 0);
   for (const r of list) {
     const name = displayName(r.number, r.name);
+    const number = prettyNumber(r.number);
     const dir = r.dir === "out" ? "out" : "in";
     const detail = r.note ? r.note : r.dir === "missed" ? "Missed" : r.dur ? fmtDuration(r.dur) : r.dir === "out" ? "No answer" : "";
     ul.append(
-      el("li", { class: r.dir === "missed" ? "missed" : "", onclick: () => dial(r.number), title: `Call ${r.number}` },
-        el("span", { class: "dir" }, icon(dir)),
+      el("li", { class: r.dir === "missed" ? "missed" : "", onclick: () => dial(r.number), title: `Call ${number}` },
+        avatar(name),
         el("div", { class: "main" },
           el("div", { class: "name" }, name),
-          el("div", { class: "sub" }, [name !== r.number ? r.number : "", detail].filter(Boolean).join(" · "))),
+          el("div", { class: "sub" }, el("span", { class: "dir" }, icon(dir)),
+            [name !== number ? number : "", detail].filter(Boolean).join(" · "))),
         el("div", { class: "when" }, fmtWhen(r.at)))
     );
   }
@@ -504,7 +538,7 @@ function renderContacts() {
   $("contacts-empty").classList.toggle("hidden", all.length > 0);
   for (const c of list) {
     ul.append(
-      el("li", { onclick: () => dial(c.number), title: `Call ${c.number}` },
+      el("li", { onclick: () => dial(c.number), title: `Call ${prettyNumber(c.number)}` },
         blfAvatar(c),
         el("div", { class: "main" }, el("div", { class: "name" }, c.name), el("div", { class: "sub" }, blfLabel(c.number))),
         el("div", { class: "actions" },
@@ -515,7 +549,7 @@ function renderContacts() {
 }
 
 function blfAvatar(c) {
-  const a = el("div", { class: "avatar" }, initials(c.name));
+  const a = avatar(c.name);
   const state = blf.get(normalize(c.number));
   if (state) a.dataset.blf = state;
   return a;
@@ -523,7 +557,7 @@ function blfAvatar(c) {
 
 function blfLabel(number) {
   const word = { idle: "Free", ringing: "Ringing", busy: "On a call" }[blf.get(normalize(number))];
-  return word ? `${number} · ${word}` : number;
+  return word ? `${prettyNumber(number)} · ${word}` : prettyNumber(number);
 }
 
 // Subscribe to the call state of every contact that's an extension.
@@ -577,7 +611,37 @@ function showRegText() {
   if (p.dnd) extra.push("Do Not Disturb");
   if (p.forwardOn && p.forwardTo.trim()) extra.push("Forwarding to " + p.forwardTo.trim());
   $("reg-text").textContent = [setReg.text || "Not registered", ...extra].join(" · ");
+  renderAccount();
   syncTray(load(STORE.missed, 0));
+}
+
+// Header and Settings show who you are: the display name (or extension) up
+// front, the full address only in the Settings card and the tooltip, since
+// a long server name doesn't fit a 360px-wide window.
+function renderAccount() {
+  const acc = load(STORE.account, {});
+  const has = !!(acc.user && acc.server);
+  const name = acc.display_name || (has ? `Extension ${acc.user}` : "No account");
+  const uri = has ? `${acc.user}@${acc.server}` : "";
+  const status = $("reg-text").textContent;
+  $("acct-name").textContent = name;
+  const me = $("acct-avatar");
+  $("acct-initials").replaceChildren(acc.display_name ? initials(acc.display_name) : icon("person"));
+  me.classList.toggle("named", !!acc.display_name);
+  if (acc.display_name) tint(me, name);
+  $("who").title = has ? `${name}\n${uri}\n${status}\n\nClick for account settings` : "Set up your account";
+  $("acct-card").classList.toggle("hidden", !has);
+  if (has) {
+    const card = $("acct-card-avatar");
+    card.textContent = acc.display_name ? initials(acc.display_name) : "";
+    if (!acc.display_name) card.append(icon("person"));
+    tint(card, name);
+    $("acct-card-name").textContent = name;
+    $("acct-card-uri").textContent = uri;
+    $("acct-card-uri").title = uri;
+    $("acct-card-status").textContent = status;
+    $("acct-card-status").className = "sub " + ($("reg-dot").className.split(" ")[1] || "");
+  }
 }
 
 // Runs each time registration succeeds after not being registered.
@@ -600,7 +664,7 @@ function fillForm() {
   for (const k of ["server", "port", "transport", "user", "auth_user", "display_name", "voicemail"]) {
     if (acc[k] != null) f.elements[k].value = acc[k];
   }
-  if (acc.user && acc.server) $("acct-name").textContent = `${acc.user}@${acc.server}`;
+  renderAccount();
 }
 
 async function register(e) {
@@ -628,7 +692,6 @@ async function register(e) {
   } else {
     invoke("password_delete", { account: accountKey(account) }).catch(() => {});
   }
-  $("acct-name").textContent = `${account.user}@${account.server}`;
   setReg("pending", "Registering…");
   registered = false;
   try {
@@ -854,6 +917,7 @@ async function takeDialLink() {
   else {
     pendingDial = dest;
     $("dial").value = dest;
+    syncDial();
     toast("Will call " + dest + " once you're signed in.");
   }
 }
@@ -950,12 +1014,22 @@ function onSip(ev) {
 
 // ---------- wiring ----------
 
-buildPad($("pad"), (d) => { $("dial").value += d; $("dial").focus(); });
+// Shrinks the text for long entries (like sip:1002@a.long.domain) and only
+// shows the delete key when there's something to delete.
+function syncDial() {
+  const n = $("dial").value.length;
+  $("dial").classList.toggle("long", n > 14);
+  $("dial").classList.toggle("longer", n > 24);
+  $("btn-back").classList.toggle("invisible", !n);
+}
+
+buildPad($("pad"), (d) => { $("dial").value += d; $("dial").focus(); syncDial(); });
 buildPad($("dtmf-pad"), (d) => focusId != null && invoke("sip_dtmf", { callId: focusId, digits: d }));
 
 $("btn-call").addEventListener("click", () => dial());
 $("dial").addEventListener("keydown", (e) => e.key === "Enter" && dial());
-$("btn-back").addEventListener("click", () => { $("dial").value = $("dial").value.slice(0, -1); });
+$("btn-back").addEventListener("click", () => { $("dial").value = $("dial").value.slice(0, -1); syncDial(); });
+$("dial").addEventListener("input", syncDial);
 $("btn-answer").addEventListener("click", () => focusId != null && answer(focusId));
 $("btn-decline").addEventListener("click", () => focusId != null && hangup(focusId));
 $("btn-hangup").addEventListener("click", () => focusId != null && hangup(focusId));
@@ -996,6 +1070,10 @@ $("btn-settings").addEventListener("click", () => {
     loadAutostart();
   }
   render();
+});
+$("who").addEventListener("click", () => {
+  if (settingsOpen) return;
+  $("btn-settings").click();
 });
 $("acct-form").addEventListener("submit", register);
 $("btn-vm").addEventListener("click", callVoicemail);
@@ -1061,6 +1139,7 @@ document.addEventListener("keydown", (e) => {
   if (/^[0-9*#+]$/.test(e.key)) $("dial").value += e.key;
   else if (e.key === "Backspace") $("dial").value = $("dial").value.slice(0, -1);
   else if (e.key === "Enter") dial();
+  syncDial();
 });
 
 ticker = setInterval(tick, 1000);
