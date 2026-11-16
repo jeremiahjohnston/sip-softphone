@@ -15,6 +15,9 @@ env:
   # Optional: publish releases to another (e.g. public) repository instead.
   RELEASE_REPO: ${{ vars.RELEASE_REPO }}
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
