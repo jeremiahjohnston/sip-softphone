@@ -1,0 +1,24 @@
+name: Dependabot auto-merge
+
+# Minor and patch updates, and every GitHub Actions update, merge themselves once the "Protect main" required checks
+# pass (GitHub's auto-merge waits for them). Major library updates wait for Jeremiah. Decision 7 of the weekly repo
+# check plan, 15 Nov 2026.
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+      - if: steps.meta.outputs.update-type != 'version-update:semver-major' || steps.meta.outputs.package-ecosystem == 'github_actions'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
